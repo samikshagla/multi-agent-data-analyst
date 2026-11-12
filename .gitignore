@@ -11,6 +11,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Cleaned data files
+data/cleaned/
+
 # Streamlit secrets and runtime data
 .streamlit/secrets.toml
 
