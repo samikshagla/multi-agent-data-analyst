@@ -14,6 +14,9 @@ __pycache__/
 # Cleaned data files
 data/cleaned/
 
+# Visualizer & Report outputs
+outputs/
+
 # Streamlit secrets and runtime data
 .streamlit/secrets.toml
 
