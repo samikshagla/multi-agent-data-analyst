@@ -18,6 +18,7 @@ def test_new_state_defaults():
     assert state["analysis_results"] == []
     assert state["charts"] == []
     assert state["review_feedback"] == []
+    assert state["review_report"] == []
     assert state["caught_errors"] == []
     assert state["retry_count"] == 0
     assert state["final_report"] == ""
