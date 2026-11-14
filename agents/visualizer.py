@@ -281,6 +281,46 @@ def _build_plotly_figure(spec: dict[str, Any], df_res: pd.DataFrame) -> Any:
     return fig
 
 
+def _sanitize_dataframe_for_json(df: pd.DataFrame) -> pd.DataFrame:
+    """Converts Interval, Period, Timestamp, Categorical, and numpy types in DataFrame to strings or plain numbers."""
+    cleaned = df.copy()
+
+    # Clean index
+    if isinstance(cleaned.index, pd.MultiIndex):
+        cleaned.index = pd.Index([
+            tuple(str(v) if isinstance(v, (pd.Interval, pd.Period, pd.Timestamp)) else v for v in row)
+            for row in cleaned.index
+        ])
+    elif (
+        isinstance(cleaned.index.dtype, pd.CategoricalDtype)
+        or isinstance(cleaned.index.dtype, pd.IntervalDtype)
+        or isinstance(cleaned.index.dtype, pd.PeriodDtype)
+        or pd.api.types.is_datetime64_any_dtype(cleaned.index.dtype)
+    ):
+        cleaned.index = cleaned.index.astype(str)
+    else:
+        cleaned.index = cleaned.index.map(
+            lambda x: str(x) if isinstance(x, (pd.Interval, pd.Period, pd.Timestamp)) else x
+        )
+
+    # Clean columns
+    for col in cleaned.columns:
+        s = cleaned[col]
+        if isinstance(s.dtype, pd.CategoricalDtype):
+            cleaned[col] = s.astype(str)
+        elif (
+            isinstance(s.dtype, pd.IntervalDtype)
+            or isinstance(s.dtype, pd.PeriodDtype)
+            or pd.api.types.is_datetime64_any_dtype(s.dtype)
+        ):
+            cleaned[col] = s.astype(str)
+        elif pd.api.types.is_object_dtype(s.dtype):
+            cleaned[col] = s.map(
+                lambda x: str(x) if isinstance(x, (pd.Interval, pd.Period, pd.Timestamp)) else x
+            )
+    return cleaned
+
+
 # ============================================================================
 # LangGraph Node: visualizer_node
 # ============================================================================
@@ -293,9 +333,15 @@ def visualizer_node(state: AgentState) -> dict[str, Any]:
     - Generates Plotly charts for tabular outputs via validated LLM specs.
     - Saves HTML charts in outputs/charts/chart_<id>.html.
     - Stores figure_json strings in state['charts'] (no live figure objects).
+    - Preserves existing charts for unchanged items during review re-runs.
     """
     events = list(state.get("events", []))
     analysis_results = state.get("analysis_results", [])
+    rerun_ids = state.get("rerun_ids", [])
+    existing_charts = state.get("charts", [])
+    existing_charts_by_id = {
+        c["id"]: c for c in existing_charts if isinstance(c, dict) and "id" in c
+    }
 
     charts: list[dict[str, Any]] = []
 
@@ -311,6 +357,12 @@ def visualizer_node(state: AgentState) -> dict[str, Any]:
         item_id = item.get("id")
         question = item.get("question", "")
         raw_res = item.get("result")
+
+        # On re-run, keep existing chart if this item was not re-run by the analyst
+        if rerun_ids and item_id not in rerun_ids:
+            if item_id in existing_charts_by_id:
+                charts.append(existing_charts_by_id[item_id])
+                continue
 
         try:
             # ----------------------------------------------------------------
@@ -358,6 +410,9 @@ def visualizer_node(state: AgentState) -> dict[str, Any]:
             else:
                 df_res = pd.DataFrame([{"value": raw_res}])
 
+            # Convert any non-JSON-serializable values (Interval, Period, Timestamp, Categorical)
+            df_res = _sanitize_dataframe_for_json(df_res)
+
             if df_res.empty:
                 charts.append({
                     "id": item_id,
@@ -384,7 +439,7 @@ Data Types: {dtypes_info}
 Sample Rows (First 5):
 {head_sample}
 
-Return ONLY JSON with keys: chart_type (one of bar, line, scatter, histogram, pie), x (column name), y (column name or null for histogram), title, x_label, y_label, takeaway (one sentence stating the main insight using actual numbers from the data). Do not return code."""
+Return ONLY JSON with keys: chart_type (one of bar, line, scatter, histogram, pie), x (column name), y (column name or null for histogram), title, x_label, y_label, takeaway (one sentence stating the main insight using actual numbers from the data). Do not return code. In the takeaway, use numbers exactly as they appear in the table, with the same units. Do not abbreviate units (write 'minutes', not 'm'). Do not quote bracket labels as if they were values."""
 
             raw_spec_reply = call_llm(spec_prompt)
             spec_dict = _parse_spec_json(raw_spec_reply)
@@ -445,6 +500,30 @@ Return ONLY JSON with keys: chart_type (one of bar, line, scatter, histogram, pi
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 continue
+
+            # Cheap check: verify takeaway numbers match table
+            takeaway = validated_spec.get("takeaway", "")
+            if takeaway:
+                from agents.reviewer import _extract_takeaway_numbers
+                mismatches = _extract_takeaway_numbers(takeaway, df_res)
+                if mismatches:
+                    regen_prompt = f"""Question: {question}
+Table values:
+{df_res.head(10).to_string()}
+
+The previous chart takeaway was flagged because it used numbers not matching the table:
+Previous takeaway: {takeaway}
+Flagged numbers: {'; '.join(mismatches)}
+
+Rewrite ONLY the one-sentence takeaway using numbers exactly as they appear in the table above. Use the exact same units and do not abbreviate.
+Return ONLY the one-sentence takeaway string."""
+                    try:
+                        new_takeaway = call_llm(regen_prompt)
+                        cleaned_new_takeaway = _clean_code_fence(new_takeaway).strip().strip('"').strip("'")
+                        if cleaned_new_takeaway:
+                            validated_spec["takeaway"] = cleaned_new_takeaway
+                    except Exception:
+                        pass
 
             # Build figure
             fig = _build_plotly_figure(validated_spec, df_res)

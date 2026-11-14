@@ -27,6 +27,8 @@ class AgentState(TypedDict):
         retry_count: Number of review/retry iterations between Reviewer and Analyst (max 3).
         final_report: Final synthesized report with findings, metrics, and chart references.
         events: Event trail for live activity feed / timeline tracking in the UI.
+        run_stats: Performance and usage metrics (execution time, LLM calls, tokens, retries).
+        rerun_ids: Analysis result IDs re-executed by Analyst following review feedback.
     """
     raw_df_path: str
     clean_df_path: str
@@ -41,6 +43,8 @@ class AgentState(TypedDict):
     retry_count: int
     final_report: str
     events: list[dict[str, Any]]
+    run_stats: dict[str, Any]
+    rerun_ids: list[int]
 
 
 def new_state(raw_df_path: str) -> AgentState:
@@ -67,4 +71,6 @@ def new_state(raw_df_path: str) -> AgentState:
         "retry_count": 0,
         "final_report": "",
         "events": [],
+        "run_stats": {},
+        "rerun_ids": [],
     }

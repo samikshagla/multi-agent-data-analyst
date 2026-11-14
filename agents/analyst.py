@@ -258,8 +258,10 @@ Use only pd and np, no imports, no file access. Return ONLY the code, no explana
                     # Keep successful items completely untouched
                     updated_results.append(item)
 
+            rerun_ids = list(failed_feedback_by_id.keys())
             return {
                 "analysis_results": updated_results,
+                "rerun_ids": rerun_ids,
                 "review_feedback": [],  # Clear review feedback so reviewer starts fresh
                 "events": events,
             }
@@ -272,7 +274,7 @@ Analyze this dataset profile and propose 3-5 insightful business questions that 
 
 {profile_text_block}
 
-Return ONLY a JSON list of questions (strings). Questions must be answerable using the columns given. Mix types: totals, comparisons across groups, trends over time (only if a date column exists), top/bottom N.
+Return ONLY a JSON list of questions (strings). Questions must be answerable using the columns given. Mix types: totals, comparisons across groups, trends over time (only if a date column exists), top/bottom N. Each question must have ONE single answer that fits in ONE table. Do not ask compound questions with 'and which...' or 'and how...'.
 Do not return code or explanations."""
 
         # Generate questions with retry if JSON parsing fails
@@ -354,6 +356,7 @@ Use only pd and np, no imports, no file access. Return ONLY the code, no explana
         return {
             "questions": questions,
             "analysis_results": analysis_results,
+            "rerun_ids": [],
             "events": events,
         }
 
@@ -369,5 +372,6 @@ Use only pd and np, no imports, no file access. Return ONLY the code, no explana
         return {
             "questions": existing_questions,
             "analysis_results": existing_results,
+            "rerun_ids": [],
             "events": events,
         }

@@ -178,3 +178,65 @@ def test_raw_csv_unmodified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         post_bytes = f.read()
 
     assert post_bytes == original_bytes
+
+
+def test_clip_outliers_skipped_when_iqr_zero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test 8: clip_outliers is skipped and logged when IQR is 0."""
+    data = {"val": [10.0] * 20}  # Constant values, IQR = 0
+    raw_path = create_temp_csv(tmp_path, pd.DataFrame(data), "zero_iqr.csv")
+    state = new_state(raw_path)
+
+    fake_plan = json.dumps([
+        {"action": "clip_outliers", "column": "val", "method": "iqr", "reason": "Test zero IQR"}
+    ])
+    monkeypatch.setattr("agents.cleaner.call_llm", lambda prompt: fake_plan)
+
+    result = cleaner_node(state)
+    assert any("IQR is 0" in entry for entry in result["cleaning_log"])
+    assert any(e["type"] == "warning" and "IQR is 0" in e["message"] for e in result["events"])
+
+
+def test_clip_outliers_skipped_when_exceeding_2_percent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test 9: clip_outliers is skipped when more than 2% of rows would be clipped."""
+    # 105 rows: 100 normal values with non-zero IQR, plus 5 extreme values (~4.8% > 2% threshold)
+    values = [float(x) for x in range(100)] + [1000.0, 2000.0, 3000.0, 4000.0, 5000.0]
+    data = {"revenue": values}
+    raw_path = create_temp_csv(tmp_path, pd.DataFrame(data), "heavy_outliers.csv")
+    state = new_state(raw_path)
+
+    fake_plan = json.dumps([
+        {"action": "clip_outliers", "column": "revenue", "method": "iqr", "reason": "Cap revenue"}
+    ])
+    monkeypatch.setattr("agents.cleaner.call_llm", lambda prompt: fake_plan)
+
+    result = cleaner_node(state)
+    cleaned_df = pd.read_csv(result["clean_df_path"])
+    # Values should not be clipped
+    assert cleaned_df["revenue"].max() == 5000.0
+    assert any("exceeding 2% threshold" in entry for entry in result["cleaning_log"])
+
+
+def test_convert_dtype_category_skipped_for_id_and_high_cardinality(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test 10: convert_dtype to category is skipped for ID columns and high-cardinality columns (>5% & >50 unique)."""
+    # 100 rows with 60 unique codes (>5% and >50 unique values)
+    data = {
+        "user_id": list(range(100)),
+        "unique_code": [f"code_{i}" for i in range(60)] + [f"code_{i % 10}" for i in range(40)],
+        "city": ["city_a", "city_b"] * 50,  # low cardinality
+    }
+    raw_path = create_temp_csv(tmp_path, pd.DataFrame(data), "category_skips.csv")
+    state = new_state(raw_path)
+
+    fake_plan = json.dumps([
+        {"action": "convert_dtype", "column": "user_id", "to": "category", "reason": "Category id"},
+        {"action": "convert_dtype", "column": "unique_code", "to": "category", "reason": "Category code"},
+        {"action": "convert_dtype", "column": "city", "to": "category", "reason": "Category city"},
+    ])
+    monkeypatch.setattr("agents.cleaner.call_llm", lambda prompt: fake_plan)
+
+    result = cleaner_node(state)
+    cleaned_df = pd.read_csv(result["clean_df_path"])
+
+    assert any("column is an ID column" in entry for entry in result["cleaning_log"])
+    assert any("high cardinality" in entry for entry in result["cleaning_log"])
+    assert any("Converted column 'city' to category" in entry for entry in result["cleaning_log"])

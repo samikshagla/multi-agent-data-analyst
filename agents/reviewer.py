@@ -68,48 +68,72 @@ def results_match(a: Any, b: Any, tolerance: float = 0.01) -> bool:
 
     # 2. DataFrame comparison
     if isinstance(a, pd.DataFrame) and isinstance(b, pd.DataFrame):
-        if len(a) != len(b):
-            return False
-        if a.shape[1] != b.shape[1]:
-            return False
-        if len(a) == 0:
+        if len(a) == 0 and len(b) == 0:
             return True
 
-        # Align columns by name if set of columns is identical
-        if set(a.columns) == set(b.columns):
-            b_aligned = b[list(a.columns)]
-        else:
-            b_aligned = b
-
-        # Sort both by first column and reset index
-        try:
-            a_sorted = a.sort_values(by=a.columns[0]).reset_index(drop=True)
-            b_sorted = b_aligned.sort_values(by=b_aligned.columns[0]).reset_index(drop=True)
-        except Exception:
-            a_sorted = a.reset_index(drop=True)
-            b_sorted = b_aligned.reset_index(drop=True)
-
-        for i in range(a_sorted.shape[1]):
-            col_a = a_sorted.iloc[:, i]
-            col_b = b_sorted.iloc[:, i]
-
-            is_a_num = pd.api.types.is_numeric_dtype(col_a)
-            is_b_num = pd.api.types.is_numeric_dtype(col_b)
-
-            if is_a_num and is_b_num:
-                diff = np.abs(col_a.astype(float) - col_b.astype(float))
-                denom = np.maximum(np.abs(col_a.astype(float)), np.abs(col_b.astype(float)))
-                denom = np.where(denom == 0, 1.0, denom)
-                rel_diff = diff / denom
-                if (rel_diff > tolerance).any():
-                    return False
+        # Standard elementwise comparison if shapes match
+        if len(a) == len(b) and a.shape[1] == b.shape[1]:
+            # Align columns by name if set of columns is identical
+            if set(a.columns) == set(b.columns):
+                b_aligned = b[list(a.columns)]
             else:
-                str_a = col_a.astype(str).str.strip()
-                str_b = col_b.astype(str).str.strip()
-                if (str_a != str_b).any():
-                    return False
+                b_aligned = b
 
-        return True
+            # Sort both by first column and reset index
+            try:
+                a_sorted = a.sort_values(by=a.columns[0]).reset_index(drop=True)
+                b_sorted = b_aligned.sort_values(by=b_aligned.columns[0]).reset_index(drop=True)
+            except Exception:
+                a_sorted = a.reset_index(drop=True)
+                b_sorted = b_aligned.reset_index(drop=True)
+
+            match_standard = True
+            for i in range(a_sorted.shape[1]):
+                col_a = a_sorted.iloc[:, i]
+                col_b = b_sorted.iloc[:, i]
+
+                is_a_num = pd.api.types.is_numeric_dtype(col_a)
+                is_b_num = pd.api.types.is_numeric_dtype(col_b)
+
+                if is_a_num and is_b_num:
+                    diff = np.abs(col_a.astype(float) - col_b.astype(float))
+                    denom = np.maximum(np.abs(col_a.astype(float)), np.abs(col_b.astype(float)))
+                    denom = np.where(denom == 0, 1.0, denom)
+                    rel_diff = diff / denom
+                    if (rel_diff > tolerance).any():
+                        match_standard = False
+                        break
+                else:
+                    str_a = col_a.astype(str).str.strip()
+                    str_b = col_b.astype(str).str.strip()
+                    if (str_a != str_b).any():
+                        match_standard = False
+                        break
+
+            if match_standard:
+                return True
+
+        # Layout-independent comparison fallback:
+        # Collect all numeric values from both DataFrames, sort them, and compare
+        nums_a: list[float] = []
+        for col in a.select_dtypes(include=[np.number]).columns:
+            nums_a.extend(a[col].dropna().astype(float).tolist())
+
+        nums_b: list[float] = []
+        for col in b.select_dtypes(include=[np.number]).columns:
+            nums_b.extend(b[col].dropna().astype(float).tolist())
+
+        if len(nums_a) > 0 and len(nums_a) == len(nums_b):
+            nums_a.sort()
+            nums_b.sort()
+            diffs = [
+                abs(va - vb) / max(abs(va), abs(vb), 1e-9)
+                for va, vb in zip(nums_a, nums_b)
+            ]
+            if all(d <= tolerance for d in diffs):
+                return True
+
+        return False
 
     return False
 
@@ -142,11 +166,15 @@ def _extract_takeaway_numbers(takeaway: str, res: Any) -> list[str]:
     """
     Finds numbers cited in chart takeaway text and verifies their presence in the
     result data (within 1% tolerance, allowing for rounding and magnitudes like 1.2M).
-    Leniently ignores years (1900-2099), small integers < 10, and percentages (%).
+    - Unit suffix bug: only treat a suffix as multiplier when directly attached (1.2M, 500k)
+      or magnitude words ('thousand', 'million', 'billion'). Never treat ' m' with a space as million.
+    - Ignore numbers that come from labels (column names, text cells, bracket labels like '0-10%').
+    - Ignore numbers in ranges like '0-10%', '6.4-7.6'.
+    - Leniently ignores years (1900-2099), small integers < 10, and percentages (%).
     """
     problems: list[str] = []
 
-    # Flatten numeric values from result
+    # 1. Collect numbers from result numeric cells
     result_numbers: list[float] = []
     if isinstance(res, (int, float, np.number)):
         if not pd.isna(res) and np.isfinite(res):
@@ -157,11 +185,45 @@ def _extract_takeaway_numbers(takeaway: str, res: Any) -> list[str]:
                 if np.isfinite(v):
                     result_numbers.append(float(v))
 
-    # Match numbers with optional currency, commas, decimals, and magnitude suffix
-    matches = re.finditer(r"(\$?\d+(?:,\d{3})*(?:\.\d+)?)\s*([kmbKMB])?(%?)", takeaway)
+    # 2. Collect numbers from result labels/text columns and column names
+    label_numbers: set[float] = set()
+    if isinstance(res, pd.DataFrame):
+        for col in res.columns:
+            for num_str in re.findall(r"\d+(?:\.\d+)?", str(col)):
+                try:
+                    label_numbers.add(float(num_str))
+                except ValueError:
+                    pass
+        for col in res.select_dtypes(include=["object", "category", "string"]).columns:
+            for val in res[col].dropna().unique():
+                for num_str in re.findall(r"\d+(?:\.\d+)?", str(val)):
+                    try:
+                        label_numbers.add(float(num_str))
+                    except ValueError:
+                        pass
 
-    for m in matches:
-        raw_num, suffix, pct = m.groups()
+    # 3. Collect numbers inside ranges in takeaway (e.g. 0-10%, 1.56–1.69, 6.4-7.6)
+    range_numbers: set[float] = set()
+    for rm in re.finditer(r"(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)", takeaway):
+        try:
+            range_numbers.add(float(rm.group(1)))
+            range_numbers.add(float(rm.group(2)))
+        except ValueError:
+            pass
+
+    # 4. Match numbers with precise suffix handling
+    # Matches:
+    # - $100, 15.71, 0.215
+    # - 1.2M, 500k, 3B (suffix directly attached, no space, not followed by word chars)
+    # - 1.2 million, 500 thousand, 3 billion (magnitude words)
+    pattern = re.compile(
+        r"(\$?\d+(?:,\d{3})*(?:\.\d+)?)(?:([kmbKMB])(?![a-zA-Z])|\s+(thousand|million|billion)\b)?(%?)",
+        flags=re.IGNORECASE,
+    )
+
+    for m in pattern.finditer(takeaway):
+        raw_num, direct_suffix, word_suffix, pct = m.groups()
+
         # Ignore percentage values
         if pct == "%":
             continue
@@ -172,22 +234,32 @@ def _extract_takeaway_numbers(takeaway: str, res: Any) -> list[str]:
         except ValueError:
             continue
 
+        # Ignore numbers in ranges (e.g. '0-10%')
+        if val in range_numbers:
+            continue
+
+        # Ignore numbers that come from result labels or column names
+        if val in label_numbers:
+            continue
+
         # Ignore calendar years
-        if suffix is None and val.is_integer() and 1900 <= int(val) <= 2099:
+        if not direct_suffix and not word_suffix and val.is_integer() and 1900 <= int(val) <= 2099:
             continue
 
         # Ignore small integers below 10
-        if suffix is None and val.is_integer() and 0 <= int(val) < 10:
+        if not direct_suffix and not word_suffix and val.is_integer() and 0 <= int(val) < 10:
             continue
 
+        # Calculate multiplier
         multiplier = 1.0
-        if suffix:
-            s_low = suffix.lower()
-            if s_low == "k":
+        suffix_str = direct_suffix or word_suffix
+        if suffix_str:
+            s_low = suffix_str.lower()
+            if s_low in ("k", "thousand"):
                 multiplier = 1e3
-            elif s_low == "m":
+            elif s_low in ("m", "million"):
                 multiplier = 1e6
-            elif s_low == "b":
+            elif s_low in ("b", "billion"):
                 multiplier = 1e9
 
         scaled_val = val * multiplier
@@ -196,13 +268,11 @@ def _extract_takeaway_numbers(takeaway: str, res: Any) -> list[str]:
         # Check for presence in result_numbers
         matched = False
         for v in result_numbers:
-            # Check scaled number (e.g. 1.2M -> 1,200,000)
             diff1 = abs(v - scaled_val) / max(abs(v), abs(scaled_val), 1e-9)
             if diff1 <= 0.01 or round(v) == round(scaled_val):
                 matched = True
                 break
 
-            # Check unscaled raw float (e.g. 1.2)
             diff2 = abs(v - val) / max(abs(v), abs(val), 1e-9)
             if diff2 <= 0.01 or round(v) == round(val):
                 matched = True
@@ -221,7 +291,7 @@ def rule_checks(item: dict[str, Any], df: pd.DataFrame, chart: dict[str, Any] | 
     2. Checks non-negativity on sum/count/sales/revenue columns.
     3. Checks for presence of NaN or infinite values.
     4. Checks for missing aggregation (> 50 rows).
-    5. Verifies numbers cited in chart takeaway appear in result.
+    Note: Takeaway number checks are advisory warnings and handled separately in reviewer_node.
     """
     problems: list[str] = []
     res = item.get("result")
@@ -265,12 +335,6 @@ def rule_checks(item: dict[str, Any], df: pd.DataFrame, chart: dict[str, Any] | 
     if isinstance(res, pd.DataFrame) and len(res) > 50:
         problems.append("Result has more than 50 rows (possible missing aggregation)")
 
-    # 5. Takeaway alignment check
-    if chart and chart.get("takeaway"):
-        takeaway_text = chart.get("takeaway", "")
-        mismatch_problems = _extract_takeaway_numbers(takeaway_text, res)
-        problems.extend(mismatch_problems)
-
     return problems
 
 
@@ -294,11 +358,11 @@ def _recompute_independently(
     columns: list[str],
     df: pd.DataFrame,
     call_llm_fn: Callable[[str], str],
-) -> tuple[str, Any, str]:
+) -> tuple[str, Any, str, str]:
     """
     Check 1: Asks LLM to solve the question using an alternative pandas method,
     runs it via sandbox, and verifies agreement with original results.
-    Returns (status: 'pass' | 'fail' | 'inconclusive', recomputed_res, note).
+    Returns (status: 'pass' | 'fail' | 'inconclusive', recomputed_res, note, recomp_code).
     """
     prompt = f"""Question: {question}
 
@@ -332,15 +396,19 @@ Store the answer in a variable called result. Use only pd and np, no imports. Re
 
     if res["status"] != "ok":
         # Mark inconclusive (not a fail) per spec
-        return "inconclusive", None, f"Recomputation code failed: {res.get('error')}"
+        return "inconclusive", None, f"Recomputation code failed: {res.get('error')}", recomp_code
 
     recomputed_val = res.get("result")
     matches = results_match(original_res, recomputed_val)
 
     if matches:
-        return "pass", recomputed_val, ""
+        note = ""
+        if isinstance(original_res, pd.DataFrame) and isinstance(recomputed_val, pd.DataFrame):
+            if original_res.shape != recomputed_val.shape or list(original_res.columns) != list(recomputed_val.columns):
+                note = "same values, different layout"
+        return "pass", recomputed_val, note, recomp_code
     else:
-        return "fail", recomputed_val, "Independent recomputation gave a different result"
+        return "fail", recomputed_val, "Independent recomputation gave a different result", recomp_code
 
 
 # ============================================================================
@@ -397,6 +465,11 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
     events = list(state.get("events", []))
     caught_errors = list(state.get("caught_errors", []))
     retry_round = state.get("retry_count", 0)
+    rerun_ids = state.get("rerun_ids", [])
+    previous_report = state.get("review_report", [])
+    prev_report_by_id = {
+        r["id"]: r for r in previous_report if isinstance(r, dict) and "id" in r
+    }
 
     analysis_results = state.get("analysis_results", [])
     charts = state.get("charts", [])
@@ -430,16 +503,40 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             continue
 
         item_id = item.get("id")
+
+        # On re-run, reuse previous report entry for items not re-run by analyst
+        if rerun_ids and item_id not in rerun_ids:
+            if item_id in prev_report_by_id:
+                reused = dict(prev_report_by_id[item_id])
+                review_report.append(reused)
+                if reused.get("verdict") == "fail":
+                    review_feedback.append({
+                        "id": item_id,
+                        "verdict": "fail",
+                        "reason": reused.get("reason", ""),
+                        "suggested_fix": "",
+                        "original_value": reused.get("original_value"),
+                        "recomputed_value": reused.get("recomputed_value"),
+                    })
+                continue
+
         q = item.get("question", "")
         code = item.get("code", "")
         original_res = item.get("result")
         chart = charts_by_id.get(item_id)
 
         try:
+            # Validate that original_res is a supported result type
+            if not isinstance(
+                original_res,
+                (pd.DataFrame, pd.Series, int, float, str, bool, np.number, np.bool_),
+            ):
+                raise TypeError(f"Unsupported result object type: {type(original_res).__name__}")
+
             # ----------------------------------------------------------------
             # Check 1: Independent Recomputation
             # ----------------------------------------------------------------
-            c1_status, recomp_res, c1_note = _recompute_independently(
+            c1_status, recomp_res, c1_note, recomp_code = _recompute_independently(
                 question=q,
                 original_code=code,
                 original_res=original_res,
@@ -449,9 +546,16 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             )
 
             # ----------------------------------------------------------------
-            # Check 2: Rule-Based Checks
+            # Check 2: Rule-Based Checks (Real result problems only)
             # ----------------------------------------------------------------
             c2_problems = rule_checks(item, df, chart=chart)
+
+            # Takeaway number check (Warning only, does not fail item or trigger retry)
+            takeaway_warning: str | None = None
+            if chart and chart.get("takeaway"):
+                takeaway_problems = _extract_takeaway_numbers(chart["takeaway"], original_res)
+                if takeaway_problems:
+                    takeaway_warning = "; ".join(takeaway_problems)
 
             # ----------------------------------------------------------------
             # Check 3: Logic Review (Advisory Only)
@@ -467,10 +571,19 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             warnings: list[str] = list(c3_warnings)
             if c1_status == "inconclusive" and c1_note:
                 warnings.append(c1_note)
+            if c1_status == "pass" and c1_note:
+                warnings.append(c1_note)
+            if takeaway_warning:
+                warnings.append(f"takeaway_mismatch: {takeaway_warning}")
 
-            # Determine final verdict
+            # Determine final verdict (only real result failures fail the item)
             is_fail = (c1_status == "fail") or (len(c2_problems) > 0)
-            verdict = "fail" if is_fail else "pass"
+            if is_fail:
+                verdict = "fail"
+            elif c1_status == "inconclusive":
+                verdict = "unverified"
+            else:
+                verdict = "pass"
 
             # Formulate reason and suggested fix
             reasons: list[str] = []
@@ -478,6 +591,8 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
                 reasons.append(c1_note or "Independent recomputation gave a different result")
             if c2_problems:
                 reasons.extend(c2_problems)
+            if c1_status == "inconclusive" and not is_fail:
+                reasons.append(c1_note or "Independent recomputation was inconclusive; could not verify")
 
             reason_str = "; ".join(reasons) if reasons else "All checks passed successfully."
 
@@ -500,25 +615,42 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
                 "verdict": verdict,
                 "reason": reason_str,
                 "warnings": warnings,
+                "takeaway_warning": takeaway_warning,
                 "original_value": orig_short,
                 "recomputed_value": recomp_short,
             })
 
             # Record failing items in feedback and caught_errors
             if verdict == "fail":
+                # Determine specific error type
+                if c1_status == "fail":
+                    error_type = "recomputation_mismatch"
+                elif any("empty" in p.lower() for p in c2_problems):
+                    error_type = "empty_result"
+                else:
+                    error_type = "rule_violation"
+
+                orig_str = str(orig_short)[:300] if orig_short is not None else ""
+                recomp_str = str(recomp_short)[:300] if recomp_short is not None else ""
+
                 review_feedback.append({
                     "id": item_id,
                     "verdict": "fail",
                     "reason": reason_str,
                     "suggested_fix": suggested_fix,
-                    "original_value": orig_short,
-                    "recomputed_value": recomp_short,
+                    "original_value": orig_str,
+                    "recomputed_value": recomp_str,
                 })
                 caught_errors.append({
                     "id": item_id,
                     "question": q,
                     "reason": reason_str,
+                    "type": error_type,
                     "retry_round": retry_round,
+                    "original_value": orig_str,
+                    "recomputed_value": recomp_str,
+                    "original_code": code,
+                    "recomputed_code": recomp_code,
                 })
 
             events.append({
@@ -529,21 +661,22 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             })
 
         except Exception as item_err:
-            # Failure isolation: treat item as pass with warning
+            # Failure isolation: treat item as unverified with reason
             warn_msg = f"reviewer could not verify this item: {item_err}"
             review_report.append({
                 "id": item_id,
                 "question": q,
-                "verdict": "pass",
-                "reason": "Verified with warnings",
+                "verdict": "unverified",
+                "reason": warn_msg,
                 "warnings": [warn_msg],
+                "takeaway_warning": None,
                 "original_value": _shorten_val(original_res),
                 "recomputed_value": None,
             })
             events.append({
                 "agent": "reviewer",
                 "type": "warning",
-                "message": f"Item {item_id} evaluation error: {item_err}. Passed with warning.",
+                "message": f"Item {item_id} evaluation error: {item_err}. Marked as unverified.",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 

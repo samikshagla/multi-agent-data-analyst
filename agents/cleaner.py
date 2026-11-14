@@ -34,7 +34,7 @@ def drop_duplicates(df: pd.DataFrame, column: str = "all", **kwargs) -> tuple[pd
     return new_df, msg, True
 
 
-def strip_whitespace(df: pd.DataFrame, column: str = "all", **kwargs) -> tuple[pd.DataFrame, str, bool]:
+def strip_whitespace(df: pd.DataFrame, column: Any = "all", **kwargs) -> tuple[pd.DataFrame, str, bool]:
     """Trims leading and trailing whitespace from string/object columns."""
     new_df = df.copy()
     if column == "all" or not column:
@@ -42,17 +42,24 @@ def strip_whitespace(df: pd.DataFrame, column: str = "all", **kwargs) -> tuple[p
             c for c in new_df.columns
             if pd.api.types.is_object_dtype(new_df[c]) or pd.api.types.is_string_dtype(new_df[c])
         ]
+    elif isinstance(column, list):
+        targets = [c for c in column if c in new_df.columns]
     else:
-        targets = [column]
+        targets = [column] if column in new_df.columns else []
 
-    modified_cols = 0
+    modified_cols: list[str] = []
     for col in targets:
         if pd.api.types.is_object_dtype(new_df[col]) or pd.api.types.is_string_dtype(new_df[col]):
             mask = new_df[col].notna()
             new_df.loc[mask, col] = new_df.loc[mask, col].astype(str).str.strip()
-            modified_cols += 1
+            modified_cols.append(col)
 
-    msg = f"Stripped whitespace in {modified_cols} text column(s)"
+    if len(modified_cols) <= 5:
+        names_str = f" ({', '.join(modified_cols)})" if modified_cols else ""
+    else:
+        names_str = f" ({', '.join(modified_cols[:5])}, and {len(modified_cols) - 5} more)"
+
+    msg = f"Stripped whitespace in {len(modified_cols)} text column(s){names_str}"
     return new_df, msg, True
 
 
@@ -135,6 +142,20 @@ def convert_dtype(
     elif target_type == "numeric":
         new_df[column] = pd.to_numeric(new_df[column], errors="coerce")
     elif target_type == "category":
+        col_lower = column.lower().strip()
+        if col_lower == "id" or col_lower.endswith("_id"):
+            return df, f"Skipped converting '{column}' to category: column is an ID column", False
+
+        total_rows = len(df)
+        n_unique = int(df[column].nunique(dropna=True))
+        if total_rows > 0 and (n_unique / total_rows > 0.05) and (n_unique > 50):
+            pct = (n_unique / total_rows) * 100
+            return (
+                df,
+                f"Skipped converting '{column}' to category: high cardinality ({n_unique} unique values, {pct:.1f}% of rows)",
+                False,
+            )
+
         new_df[column] = new_df[column].astype("category")
     else:
         return df, f"Unknown target dtype '{target_type}' for column '{column}'", False
@@ -157,10 +178,22 @@ def clip_outliers(
     q25 = float(series.quantile(0.25))
     q75 = float(series.quantile(0.75))
     iqr = q75 - q25
+    if iqr == 0:
+        return df, f"Skipped clipping outliers in '{column}': IQR is 0", False
+
     lower_bound = q25 - 1.5 * iqr
     upper_bound = q75 + 1.5 * iqr
 
     outlier_count = int(((df[column] < lower_bound) | (df[column] > upper_bound)).sum())
+    total_rows = len(df)
+    if total_rows > 0 and (outlier_count / total_rows > 0.02):
+        pct = (outlier_count / total_rows) * 100
+        return (
+            df,
+            f"Skipped clipping outliers in '{column}': {outlier_count} rows ({pct:.1f}%) would be clipped, exceeding 2% threshold",
+            False,
+        )
+
     new_df = df.copy()
     new_df[column] = new_df[column].clip(lower=lower_bound, upper=upper_bound)
     msg = (
@@ -271,7 +304,7 @@ Allowed actions list:
 - convert_dtype: casts column (column: column name, to: 'datetime' | 'numeric' | 'category')
 - clip_outliers: caps extreme numbers using IQR (column: column name, method: 'iqr')
 
-Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the allowed list, a 'column' (or 'all'), optional parameters, and a short 'reason'. Do not return code."""
+Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the allowed list, a 'column' (or 'all'), optional parameters, and a short 'reason'. Do not return code. Do not clip outliers in revenue, price, count, or time columns unless the values are clearly impossible. Always list column names explicitly, never use 'all' for standardize_case."""
 
         # Call Gemini LLM
         llm_reply = call_llm(prompt)
@@ -289,13 +322,46 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
 
         current_df = df.copy()
 
+        # Consolidate multiple strip_whitespace steps into one merged step
+        consolidated_plan = []
+        strip_columns: list[str] = []
+        has_strip_all = False
+
+        for step in plan:
+            if not isinstance(step, dict):
+                continue
+            act = str(step.get("action", "")).strip()
+            raw_col = step.get("column", "")
+            if act == "strip_whitespace":
+                if raw_col == "all" or not raw_col:
+                    has_strip_all = True
+                elif isinstance(raw_col, list):
+                    strip_columns.extend(str(c).strip() for c in raw_col)
+                else:
+                    strip_columns.append(str(raw_col).strip())
+            else:
+                consolidated_plan.append(step)
+
+        if has_strip_all:
+            consolidated_plan.insert(0, {"action": "strip_whitespace", "column": "all", "reason": "Trim whitespace in all text columns"})
+        elif strip_columns:
+            # Preserve order, remove duplicates
+            unique_strip = list(dict.fromkeys(strip_columns))
+            consolidated_plan.insert(0, {"action": "strip_whitespace", "column": unique_strip, "reason": "Trim whitespace in specified text columns"})
+
+        plan = consolidated_plan
+
         # Deterministically apply each cleaning step
         for step in plan:
             if not isinstance(step, dict):
                 continue
 
             action = str(step.get("action", "")).strip()
-            column = str(step.get("column", "")).strip()
+            raw_column = step.get("column", "")
+            if isinstance(raw_column, list):
+                column = raw_column
+            else:
+                column = str(raw_column).strip()
             reason = step.get("reason", "")
 
             # 1. Action validation: Must be in allowed list
@@ -312,7 +378,11 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
 
             # 2. Column validation: Must exist in dataframe or be 'all' for supporting actions
             actions_supporting_all = {"drop_duplicates", "strip_whitespace", "drop_missing_rows"}
-            if column == "all" and action not in actions_supporting_all:
+            if isinstance(column, list):
+                column = [c for c in column if c in current_df.columns]
+                if not column:
+                    continue
+            elif column == "all" and action not in actions_supporting_all:
                 skip_msg = f"Skipped '{action}': action does not support column='all'."
                 cleaning_log.append(skip_msg)
                 events.append({
@@ -322,8 +392,7 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 continue
-
-            if column != "all" and column not in current_df.columns:
+            elif column != "all" and column not in current_df.columns:
                 skip_msg = f"Skipped '{action}': column '{column}' not found in dataset."
                 cleaning_log.append(skip_msg)
                 events.append({

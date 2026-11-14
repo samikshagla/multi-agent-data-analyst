@@ -23,3 +23,5 @@ def test_new_state_defaults():
     assert state["retry_count"] == 0
     assert state["final_report"] == ""
     assert state["events"] == []
+    assert state["run_stats"] == {}
+    assert state["rerun_ids"] == []

@@ -117,19 +117,97 @@ def _validate_code_ast(code: str) -> tuple[bool, str | None, str]:
     return True, None, "ok"
 
 
+def _clean_series(s: pd.Series) -> pd.Series:
+    """Converts Interval, Period, Timestamp, Categorical, and non-JSON-friendly values to strings."""
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        return s.astype(str)
+    if (
+        isinstance(s.dtype, pd.IntervalDtype)
+        or isinstance(s.dtype, pd.PeriodDtype)
+        or pd.api.types.is_datetime64_any_dtype(s.dtype)
+    ):
+        return s.astype(str)
+    if pd.api.types.is_object_dtype(s.dtype):
+        return s.map(
+            lambda x: str(x)
+            if isinstance(x, (pd.Interval, pd.Period, pd.Timestamp))
+            else x
+        )
+    return s
+
+
+def _clean_index(idx: pd.Index) -> pd.Index:
+    """Converts non-JSON-friendly index values (Interval, Period, Timestamp, Categorical) to strings."""
+    if isinstance(idx, pd.MultiIndex):
+        new_levels = []
+        for level in idx.levels:
+            if (
+                isinstance(level.dtype, pd.CategoricalDtype)
+                or isinstance(level.dtype, pd.IntervalDtype)
+                or isinstance(level.dtype, pd.PeriodDtype)
+                or pd.api.types.is_datetime64_any_dtype(level.dtype)
+            ):
+                new_levels.append(level.astype(str))
+            else:
+                new_levels.append(
+                    level.map(
+                        lambda x: str(x)
+                        if isinstance(x, (pd.Interval, pd.Period, pd.Timestamp))
+                        else x
+                    )
+                )
+        return idx.set_levels(new_levels)
+    elif (
+        isinstance(idx.dtype, pd.CategoricalDtype)
+        or isinstance(idx.dtype, pd.IntervalDtype)
+        or isinstance(idx.dtype, pd.PeriodDtype)
+        or pd.api.types.is_datetime64_any_dtype(idx.dtype)
+    ):
+        return idx.astype(str)
+    else:
+        return idx.map(
+            lambda x: str(x)
+            if isinstance(x, (pd.Interval, pd.Period, pd.Timestamp))
+            else x
+        )
+
+
+def _clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Converts non-JSON-friendly values in DataFrame columns and index into strings or numbers."""
+    cleaned = df.copy()
+    cleaned.index = _clean_index(cleaned.index)
+    if isinstance(cleaned.columns, pd.MultiIndex):
+        cleaned.columns = pd.Index([
+            "_".join(str(c) for c in col if str(c)).strip()
+            for col in cleaned.columns
+        ])
+    else:
+        cleaned.columns = _clean_index(cleaned.columns)
+
+    for col in cleaned.columns:
+        cleaned[col] = _clean_series(cleaned[col])
+    return cleaned
+
+
 def _convert_result(res: Any) -> Any:
     """
     Safety Layer 4: Result conversion.
     Converts Series to DataFrame, converts numpy numbers to Python numbers,
-    and preserves DataFrames or scalar values as is.
+    and converts non-JSON values (Interval, Period, Timestamp, Categorical)
+    in columns and index into plain strings or numbers.
     """
     # Convert pandas Series to DataFrame via reset_index
     if isinstance(res, pd.Series):
-        return res.reset_index()
+        res = res.reset_index()
+        return _clean_dataframe(res)
 
-    # DataFrames remain as DataFrames
+    # DataFrames remain as DataFrames with sanitized index and columns
     if isinstance(res, pd.DataFrame):
-        return res
+        return _clean_dataframe(res)
+
+    # Convert non-JSON scalar types
+    if isinstance(res, (pd.Interval, pd.Period, pd.Timestamp)):
+        return str(res)
 
     # Convert numpy numbers and booleans to plain Python types
     if isinstance(res, (np.integer, int)) and not isinstance(res, (bool, np.bool_)):
@@ -174,8 +252,23 @@ def _sandbox_worker(conn: Any, code: str, df: pd.DataFrame) -> None:
             })
             return
 
+        raw_result = exec_scope["result"]
+
+        # Check for disallowed aggregate structures (tuple, list, or dict containing DataFrames)
+        is_tuple_or_list = isinstance(raw_result, (tuple, list))
+        is_dict_of_dfs = isinstance(raw_result, dict) and any(
+            isinstance(v, (pd.DataFrame, pd.Series)) for v in raw_result.values()
+        )
+        if is_tuple_or_list or is_dict_of_dfs:
+            conn.send({
+                "status": "error",
+                "result": None,
+                "error": "result must be ONE DataFrame, Series, or a single number, not a tuple/list. Combine the answer into a single table.",
+            })
+            return
+
         # Sanitize result to safe format
-        safe_result = _convert_result(exec_scope["result"])
+        safe_result = _convert_result(raw_result)
         conn.send({
             "status": "ok",
             "result": safe_result,

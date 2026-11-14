@@ -127,7 +127,12 @@ def test_wrong_result_fails_and_recorded(tmp_path: Path, monkeypatch: pytest.Mon
 
     # Must appear in caught_errors
     assert len(res["caught_errors"]) == 1
-    assert res["caught_errors"][0]["id"] == 1
+    err = res["caught_errors"][0]
+    assert err["id"] == 1
+    assert err["type"] == "recomputation_mismatch"
+    assert err["retry_round"] == 0
+    assert err["original_code"] == "result = 99999"
+    assert 'df["sales"].sum()' in err["recomputed_code"]
 
     # Report has fail verdict
     assert res["review_report"][0]["verdict"] == "fail"
@@ -145,26 +150,104 @@ def test_rule_check_flags_empty_result():
 
 
 def test_rule_check_takeaway_numbers():
-    """Test 5: Rule check validates takeaway numbers against result values."""
-    res_df = pd.DataFrame({"revenue": [1200000.0], "sales": [1200.0]})
-    item = {"id": 4, "result": res_df}
+    """Test 5: Takeaway extraction checks numbers, unit suffixes, and label ranges."""
+    from agents.reviewer import _extract_takeaway_numbers
 
-    # Valid chart: mentions $1,200, 1.2M, year 2024 (ignored), percentage 10% (ignored), small int 3 (ignored)
-    valid_chart = {
-        "id": 4,
-        "takeaway": "Top store had $1,200 in sales, 1.2M revenue in 2024 with 3 reps (10% growth).",
-    }
-    problems_valid = rule_checks(item, pd.DataFrame(), chart=valid_chart)
-    assert len(problems_valid) == 0
+    res_df = pd.DataFrame({
+        "tier": ["0-10%", "10-20%"],
+        "revenue": [1200000.0, 500000.0],
+        "sales": [1200.0, 800.0],
+    })
 
-    # Invalid chart: mentions 88888 which is completely absent from result data
-    invalid_chart = {
-        "id": 4,
-        "takeaway": "Top store had 88888 transactions.",
-    }
-    problems_invalid = rule_checks(item, pd.DataFrame(), chart=invalid_chart)
-    assert len(problems_invalid) == 1
-    assert "88888" in problems_invalid[0]
+    # Valid: 1.2M, $1,200, label 0-10% ignored, 7 minutes not treated as million
+    valid_text = "Top tier 0-10% had $1,200 in sales, 1.2M revenue, and took 7 minutes."
+    assert len(_extract_takeaway_numbers(valid_text, res_df)) == 0
+
+    # Invalid: mentions 88888 absent from result data
+    invalid_text = "Top store had 88888 transactions."
+    problems = _extract_takeaway_numbers(invalid_text, res_df)
+    assert len(problems) == 1
+    assert "88888" in problems[0]
+
+
+def test_takeaway_mismatch_warning_does_not_trigger_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Takeaway mismatch is recorded as a warning, verdict is pass, and no review feedback is emitted."""
+    df = pd.DataFrame({"sales": [10, 20]})
+    state = setup_test_state(tmp_path, df)
+    state["analysis_results"] = [
+        {"id": 4, "question": "Total?", "code": "result = 30", "result": 30, "status": "ok"}
+    ]
+    state["charts"] = [
+        {"id": 4, "status": "ok", "takeaway": "Total was 99999 sales."}
+    ]
+
+    mock_llm = MockLLMSequence([
+        'result = df["sales"].sum()',
+        '{"issues": []}',
+    ])
+    monkeypatch.setattr("agents.reviewer.call_llm", mock_llm)
+
+    res = reviewer_node(state)
+    report_item = res["review_report"][0]
+    assert report_item["verdict"] == "pass"
+    assert report_item["takeaway_warning"] is not None
+    assert "99999" in report_item["takeaway_warning"]
+    assert len(res["review_feedback"]) == 0
+
+
+def test_results_match_layout_independent():
+    """Long vs wide table with same numbers matches; different numbers mismatch."""
+    long_df = pd.DataFrame({
+        "city": ["NY", "NY", "CHI", "CHI"],
+        "category": ["A", "B", "A", "B"],
+        "val": [10.0, 20.0, 30.0, 40.0],
+    })
+    wide_df = pd.DataFrame({
+        "city": ["NY", "CHI"],
+        "A": [10.0, 30.0],
+        "B": [20.0, 40.0],
+    })
+    # Same numbers in different shape
+    assert results_match(long_df, wide_df) is True
+
+    # Same shape with one different number
+    diff_df = pd.DataFrame({
+        "city": ["NY", "CHI"],
+        "A": [10.0, 30.0],
+        "B": [20.0, 999.0],
+    })
+    assert results_match(long_df, diff_df) is False
+
+
+def test_reviewer_rerun_only_reviews_rerun_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """On rerun, reviewer reuses previous verdicts for unchanged items."""
+    df = pd.DataFrame({"sales": [10, 20]})
+    state = setup_test_state(tmp_path, df)
+    state["rerun_ids"] = [1]
+    state["review_report"] = [
+        {"id": 0, "verdict": "pass", "reason": "Passed in round 1"},
+        {"id": 1, "verdict": "fail", "reason": "Failed in round 1"},
+    ]
+    state["analysis_results"] = [
+        {"id": 0, "question": "Q0", "code": "result = 30", "result": 30, "status": "ok"},
+        {"id": 1, "question": "Q1", "code": "result = 30", "result": 30, "status": "ok"},
+    ]
+
+    # Only item 1 should be recomputed by LLM!
+    mock_llm = MockLLMSequence([
+        'result = df["sales"].sum()',
+        '{"issues": []}',
+    ])
+    monkeypatch.setattr("agents.reviewer.call_llm", mock_llm)
+
+    res = reviewer_node(state)
+    assert len(res["review_report"]) == 2
+    r0 = next(r for r in res["review_report"] if r["id"] == 0)
+    assert r0["reason"] == "Passed in round 1"
+    r1 = next(r for r in res["review_report"] if r["id"] == 1)
+    assert r1["verdict"] == "pass"
+    # LLM should have only been invoked for item 1
+    assert len(mock_llm.prompts) == 2
 
 
 def test_check3_warnings_do_not_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -226,8 +309,8 @@ def test_recomputation_failure_is_inconclusive(tmp_path: Path, monkeypatch: pyte
 
     res = reviewer_node(state)
 
-    # Item still passes
-    assert res["review_report"][0]["verdict"] == "pass"
+    # Item is marked as unverified (does not fail and does not trigger retry)
+    assert res["review_report"][0]["verdict"] == "unverified"
     assert any("Recomputation code failed" in w for w in res["review_report"][0]["warnings"])
     assert len(res["review_feedback"]) == 0
 
@@ -277,6 +360,6 @@ def test_resilience_when_item_breaks(tmp_path: Path):
 
     assert len(res["review_report"]) == 1
     report = res["review_report"][0]
-    assert report["verdict"] == "pass"
+    assert report["verdict"] == "unverified"
     assert any("could not verify this item" in w for w in report["warnings"])
     assert len(res["review_feedback"]) == 0

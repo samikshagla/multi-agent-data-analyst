@@ -145,3 +145,29 @@ result = len(df)
     assert len(sample_df) == original_len
     assert sample_df["sales"].tolist() == original_values
     assert "new_col" not in sample_df.columns
+
+
+def test_tuple_and_list_results_rejected(sample_df: pd.DataFrame):
+    """Test 9: Returning a tuple or list triggers an error asking for a single table."""
+    code_tuple = 'result = (df["sales"].sum(), df["profit"].sum())'
+    res_tuple = run_code(code_tuple, sample_df)
+    assert res_tuple["status"] == "error"
+    assert "result must be ONE DataFrame, Series, or a single number, not a tuple/list. Combine the answer into a single table." in res_tuple["error"]
+
+    code_list = 'result = [df["sales"].mean(), df["profit"].mean()]'
+    res_list = run_code(code_list, sample_df)
+    assert res_list["status"] == "error"
+    assert "result must be ONE DataFrame, Series, or a single number, not a tuple/list." in res_list["error"]
+
+
+def test_interval_period_timestamp_converted(sample_df: pd.DataFrame):
+    """Test 10: Interval, Period, and Timestamp values in result columns and index are converted to strings."""
+    code = '''
+df["sales_bin"] = pd.cut(df["sales"], bins=2)
+result = df.groupby("sales_bin")["sales"].mean().reset_index()
+'''
+    res = run_code(code, sample_df)
+    assert res["status"] == "ok"
+    assert isinstance(res["result"], pd.DataFrame)
+    # The sales_bin column should be string, not IntervalDtype
+    assert isinstance(res["result"]["sales_bin"].iloc[0], str)

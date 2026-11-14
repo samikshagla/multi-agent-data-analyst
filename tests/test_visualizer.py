@@ -329,3 +329,60 @@ def test_resilience_on_broken_item():
     # Item 10 succeeded
     assert res["charts"][1]["status"] == "ok"
     assert res["charts"][1]["type"] == "metric"
+
+
+def test_charts_rebuilt_only_for_rerun_ids(monkeypatch: pytest.MonkeyPatch):
+    """Test 9: On re-run, visualizer only rebuilds charts for ids in rerun_ids and preserves others."""
+    state = new_state("data/sample.csv")
+    state["rerun_ids"] = [2]
+    # Cached chart for id 1
+    state["charts"] = [
+        {"id": 1, "status": "ok", "type": "metric", "title": "Cached Chart 1", "takeaway": "Cached takeaway"},
+        {"id": 2, "status": "ok", "type": "metric", "title": "Old Chart 2", "takeaway": "Old takeaway"},
+    ]
+    state["analysis_results"] = [
+        {"id": 1, "question": "Q1", "code": "...", "result": 100, "status": "ok"},
+        {"id": 2, "question": "Q2", "code": "...", "result": 200, "status": "ok"},
+    ]
+
+    res = visualizer_node(state)
+    assert len(res["charts"]) == 2
+    # Chart 1 is the exact cached chart object
+    c1 = next(c for c in res["charts"] if c["id"] == 1)
+    assert c1["title"] == "Cached Chart 1"
+    # Chart 2 was rebuilt
+    c2 = next(c for c in res["charts"] if c["id"] == 2)
+    assert c2["title"] == "Q2"
+
+
+def test_non_json_values_converted_in_visualizer(monkeypatch: pytest.MonkeyPatch):
+    """Test 10: Non-JSON values (Interval, Categorical) in DataFrame are sanitized before plotting."""
+    df_raw = pd.DataFrame({
+        "bin": pd.Series([pd.Interval(0, 10), pd.Interval(10, 20)], dtype="interval"),
+        "cat": pd.Series(["A", "B"], dtype="category"),
+        "sales": [100, 200],
+    })
+    state = new_state("data/sample.csv")
+    state["analysis_results"] = [
+        {"id": 1, "question": "Sales by bin?", "code": "...", "result": df_raw, "status": "ok"}
+    ]
+
+    fake_spec = json.dumps({
+        "chart_type": "bar",
+        "x": "bin",
+        "y": "sales",
+        "title": "Binned Sales",
+        "x_label": "Bin",
+        "y_label": "Sales",
+        "takeaway": "Sales in bin.",
+    })
+    monkeypatch.setattr("agents.visualizer.call_llm", lambda prompt: fake_spec)
+
+    res = visualizer_node(state)
+    assert len(res["charts"]) == 1
+    chart = res["charts"][0]
+    assert chart["status"] == "ok"
+    assert chart["figure_json"] is not None
+    # Ensure figure_json is valid JSON
+    parsed = json.loads(chart["figure_json"])
+    assert "data" in parsed
