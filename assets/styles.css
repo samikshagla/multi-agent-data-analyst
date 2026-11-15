@@ -496,3 +496,107 @@ div[data-testid="stMetric"] [data-testid="stMetricLabel"] p {
     text-decoration: underline;
     color: #2DD4BF;
 }
+
+/* ==========================================================================
+   10. Results Tabs & Component Styles
+   ========================================================================== */
+
+/* Verification Tag Pills */
+.tag-pill {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.65rem;
+    border-radius: 9999px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+.tag-verified {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34D399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.tag-fixed-after-retry, .tag-fixed {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60A5FA;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.tag-unverified {
+    background: rgba(148, 163, 184, 0.2);
+    color: #CBD5E1;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.tag-unresolved, .tag-failed {
+    background: rgba(239, 68, 68, 0.2);
+    color: #F87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* Result Cards */
+.result-card {
+    background-color: #1E293B;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.result-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.result-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #F8FAFC;
+    line-height: 1.35;
+}
+
+.chart-takeaway-box {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background-color: #0F172A;
+    border-left: 3px solid #14B8A6;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    color: #E2E8F0;
+    line-height: 1.45;
+}
+
+.takeaway-warning-text {
+    margin-top: 0.45rem;
+    font-size: 0.8rem;
+    color: #F59E0B;
+}
+
+.metric-big-card {
+    background: linear-gradient(135deg, #0F172A 0%, #16243A 100%);
+    border-radius: 12px;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    padding: 2rem 1.5rem;
+    text-align: center;
+    margin: 1rem 0;
+}
+
+.metric-big-card-val {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #14B8A6;
+    line-height: 1.1;
+}
+
+.metric-big-card-lbl {
+    font-size: 0.9rem;
+    color: #94A3B8;
+    margin-top: 0.5rem;
+}

@@ -78,6 +78,12 @@ def main() -> None:
         print(f"  Duration:                 {final_stats.get('time_seconds', 0.0):.2f} seconds")
         print(f"  LLM Invocations:          {final_stats.get('llm_calls', 0)}")
         print(f"  Token Usage:              {final_stats.get('tokens', 0):,} tokens")
+        by_model = final_stats.get("by_model", {})
+        if by_model:
+            for m, m_stats in by_model.items():
+                print(f"  Model ({m}): {m_stats.get('calls', 0)} calls, {m_stats.get('tokens', m_stats.get('total_tokens', 0)):,} tokens")
+            if len(by_model) > 1:
+                print("Multiple models were used in this run")
         print(f"  Review Retries:           {final_stats.get('retries_used', 0)}")
         print(f"  Items Flagged (Round 1):  {final_stats.get('items_flagged_first_pass', 0)}")
         print(f"  Fixed by Retry:           {final_stats.get('fixed_by_retry', 0)}")

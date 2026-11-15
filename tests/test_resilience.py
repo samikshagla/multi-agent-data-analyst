@@ -298,3 +298,176 @@ def test_format_local_timestamp_converts_utc_to_local():
 
     formatted = format_local_timestamp(utc_iso)
     assert formatted == expected
+
+
+# ============================================================================
+# 5. Model Tracking & Multi-Model Reporting Tests
+# ============================================================================
+
+def test_usage_stats_by_model_tracking_and_reset(monkeypatch: pytest.MonkeyPatch):
+    """get_usage_stats includes by_model dict tracking calls and tokens, cleared on reset."""
+    from llm import reset_usage_stats, get_usage_stats, call_llm
+
+    reset_usage_stats()
+    assert get_usage_stats()["by_model"] == {}
+
+    # Mock groq call
+    monkeypatch.setattr("llm._get_provider", lambda: "groq")
+    monkeypatch.setattr("llm._call_groq", lambda p: ("Result 1", 100, 50))
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+    call_llm("prompt 1")
+    call_llm("prompt 2")
+
+    stats = get_usage_stats()
+    assert "by_model" in stats
+    by_model = stats["by_model"]
+    assert "openai/gpt-oss-120b" in by_model
+
+    groq_stats = by_model["openai/gpt-oss-120b"]
+    assert groq_stats["provider"] == "groq"
+    assert groq_stats["calls"] == 2
+    assert groq_stats["input_tokens"] == 200
+    assert groq_stats["output_tokens"] == 100
+    assert groq_stats["tokens"] == 300
+
+    # Reset
+    reset_usage_stats()
+    assert get_usage_stats()["by_model"] == {}
+
+
+def test_multiple_models_tracking_in_run_stats(monkeypatch: pytest.MonkeyPatch):
+    """When multiple models are invoked, by_model tracks both and run_stats reflects multiple_models_used."""
+    from llm import reset_usage_stats, get_usage_stats, call_llm
+    from graph import _compute_run_stats
+
+    reset_usage_stats()
+
+    # Call 1 with Groq
+    monkeypatch.setattr("llm._get_provider", lambda: "groq")
+    monkeypatch.setattr("llm._call_groq", lambda p: ("Groq output", 10, 20))
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    call_llm("groq prompt")
+
+    # Call 2 with Gemini
+    monkeypatch.setattr("llm._get_provider", lambda: "gemini")
+    monkeypatch.setattr("llm._call_gemini", lambda p: ("Gemini output", 30, 40))
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.0-flash")
+    call_llm("gemini prompt")
+
+    usage = get_usage_stats()
+    assert len(usage["by_model"]) == 2
+    assert "openai/gpt-oss-120b" in usage["by_model"]
+    assert "gemini-2.0-flash" in usage["by_model"]
+
+    # Check _compute_run_stats
+    run_stats = _compute_run_stats({}, 1.5, usage)
+    assert run_stats["multiple_models_used"] is True
+    assert set(run_stats["models_used"]) == {"openai/gpt-oss-120b", "gemini-2.0-flash"}
+    assert "by_model" in run_stats
+
+
+def test_run_py_summary_prints_model_and_multiple_models_warning(capsys, monkeypatch):
+    """run.py CLI summary shows model usage and emits 'Multiple models were used in this run' when >1 model."""
+    import run
+
+    # Fake stream yielding run_stats with multiple models
+    fake_stats_multi = {
+        "time_seconds": 2.5,
+        "llm_calls": 5,
+        "tokens": 500,
+        "by_model": {
+            "openai/gpt-oss-120b": {"calls": 3, "tokens": 300, "total_tokens": 300},
+            "gemini-2.0-flash": {"calls": 2, "tokens": 200, "total_tokens": 200},
+        },
+        "retries_used": 0,
+        "items_flagged_first_pass": 0,
+        "fixed_by_retry": 0,
+        "unresolved": 0,
+        "total_flag_events": 0,
+    }
+
+    monkeypatch.setattr(run, "run_pipeline", lambda p, stream=True: [("complete", {"run_stats": fake_stats_multi})])
+    monkeypatch.setattr("sys.argv", ["run.py", "data/sample.csv"])
+
+    run.main()
+    captured = capsys.readouterr().out
+    assert "EXECUTION SUMMARY" in captured
+    assert "Model (openai/gpt-oss-120b): 3 calls, 300 tokens" in captured
+    assert "Model (gemini-2.0-flash): 2 calls, 200 tokens" in captured
+    assert "Multiple models were used in this run" in captured
+
+    # Single model should NOT print "Multiple models were used in this run"
+    fake_stats_single = dict(fake_stats_multi)
+    fake_stats_single["by_model"] = {
+        "openai/gpt-oss-120b": {"calls": 5, "tokens": 500, "total_tokens": 500}
+    }
+    monkeypatch.setattr(run, "run_pipeline", lambda p, stream=True: [("complete", {"run_stats": fake_stats_single})])
+    run.main()
+    captured_single = capsys.readouterr().out
+    assert "Model (openai/gpt-oss-120b): 5 calls, 500 tokens" in captured_single
+    assert "Multiple models were used in this run" not in captured_single
+
+
+def test_eval_reviewer_summary_includes_by_model_and_warning(capsys, tmp_path):
+    """eval/run_reviewer_eval.py generates summary.json and summary.md with by_model and multi-model note."""
+    import json
+    from eval.run_reviewer_eval import generate_summary
+
+    records = [
+        {
+            "case_id": "q01_c",
+            "item_id": 1,
+            "is_wrong": False,
+            "kind": "correct",
+            "category": "simple",
+            "difficulty": "easy",
+            "magnitude_bucket": "none",
+            "verdict": "pass",
+            "llm_calls": 1,
+            "tokens": 150,
+            "seconds": 0.5,
+            "by_model": {
+                "openai/gpt-oss-120b": {"provider": "groq", "calls": 1, "tokens": 150}
+            },
+        },
+        {
+            "case_id": "q01_w1",
+            "item_id": 1,
+            "is_wrong": True,
+            "kind": "wrong_column",
+            "category": "simple",
+            "difficulty": "easy",
+            "magnitude_bucket": "gross",
+            "verdict": "fail",
+            "failed_check": "recomputation_mismatch",
+            "llm_calls": 1,
+            "tokens": 120,
+            "seconds": 0.4,
+            "by_model": {
+                "gemini-2.0-flash": {"provider": "gemini", "calls": 1, "tokens": 120}
+            },
+        },
+    ]
+
+    summary = generate_summary(records, tmp_path)
+    captured = capsys.readouterr().out
+
+    # 1. Terminal output
+    assert "Models Used:" in captured
+    assert "openai/gpt-oss-120b (1 calls, 150 tokens)" in captured
+    assert "gemini-2.0-flash (1 calls, 120 tokens)" in captured
+    assert "Multiple models were used in this run" in captured
+
+    # 2. summary.json
+    assert "by_model" in summary["totals"]
+    assert "openai/gpt-oss-120b" in summary["totals"]["by_model"]
+    assert "gemini-2.0-flash" in summary["totals"]["by_model"]
+    assert set(summary["totals"]["models_used"]) == {"openai/gpt-oss-120b", "gemini-2.0-flash"}
+
+    # 3. summary.md
+    md_content = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "**Models Used**:" in md_content
+    assert "`openai/gpt-oss-120b`" in md_content
+    assert "`gemini-2.0-flash`" in md_content
+    assert "Multiple models were used in this run" in md_content

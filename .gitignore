@@ -23,3 +23,8 @@ outputs/
 
 # Testing cache
 .pytest_cache/
+
+# Evaluation runs and generated dirty datasets
+eval/runs/
+eval/dirty/
+

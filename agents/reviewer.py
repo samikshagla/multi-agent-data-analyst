@@ -24,55 +24,276 @@ from tools.sandbox import run_code
 # Helper: Results Matching with Tolerance
 # ============================================================================
 
-def results_match(a: Any, b: Any, tolerance: float = 0.01) -> bool:
+GENERIC_HEADERS = {
+    "index", "0", "1", "level_0", "level_1", "unnamed: 0",
+    "value", "values", "count", "counts", "proportion", "proportions",
+    "pct", "percent", "percentage", "share", "shares", "total", "totals",
+    "sum", "mean", "avg", "median", "result", "results", "metric", "measure",
+}
+
+
+def _is_generic_header(col: Any) -> bool:
+    if isinstance(col, (int, float, np.number)):
+        return True
+    s = str(col).strip().lower()
+    return s in GENERIC_HEADERS or s.isdigit()
+
+
+def _extract_numeric_cells(table: Any) -> list[float]:
     """
-    Compares two analytical calculation results for equality within a given tolerance:
-    - Scalars: compares numeric values within relative tolerance (default 1%),
-      handling zero and NaN safely.
-    - DataFrames: compares after sorting both by their first column and resetting
-      index. Compares numeric columns within tolerance and text columns exactly.
-      Row counts and column counts must match.
+    Extracts all numeric cells from a DataFrame or Series,
+    ignoring non-numeric label cells and RangeIndex.
+    """
+    if isinstance(table, pd.Series):
+        nums = []
+        for val in table.dropna().values:
+            if isinstance(val, (int, float, np.number)) and not isinstance(val, (bool, np.bool_)):
+                if np.isfinite(val):
+                    nums.append(float(val))
+        return nums
+
+    if isinstance(table, pd.DataFrame):
+        nums = []
+        for col in table.columns:
+            # Ignore RangeIndex if reset as 'index' or 'level_0'
+            col_str = str(col).strip().lower()
+            if col_str in ("index", "level_0") and len(table) > 0:
+                s = table[col]
+                if pd.api.types.is_integer_dtype(s):
+                    vals = s.dropna().values
+                    if len(vals) > 0 and (vals == np.arange(len(vals))).all():
+                        continue
+
+            for val in table[col].dropna().values:
+                if isinstance(val, (int, float, np.number)) and not isinstance(val, (bool, np.bool_)):
+                    if np.isfinite(val):
+                        nums.append(float(val))
+        return nums
+
+    return []
+
+
+def _extract_labels_and_values(
+    df: pd.DataFrame,
+) -> tuple[set[str], dict[str, list[float]], list[float]]:
+    """
+    Extracts (labels, label_to_values_map, all_numbers) from a DataFrame.
+    Supports long tables, 1D wide tables, and 2D pivoted tables.
+    """
+    all_numbers: list[float] = []
+
+    # 1. Collect all numeric values (ignoring reset RangeIndex)
+    for col in df.columns:
+        col_str = str(col).strip().lower()
+        if col_str in ("index", "level_0") and len(df) > 0:
+            if pd.api.types.is_integer_dtype(df[col]):
+                vals = df[col].dropna().values
+                if len(vals) > 0 and (vals == np.arange(len(vals))).all():
+                    continue
+        for val in df[col].dropna().values:
+            if isinstance(val, (int, float, np.number)) and not isinstance(val, (bool, np.bool_)):
+                if np.isfinite(val):
+                    all_numbers.append(float(val))
+
+    # 2. Identify text columns and numeric columns
+    text_cols = []
+    num_cols = []
+    for col in df.columns:
+        col_str = str(col).strip().lower()
+        if col_str in ("index", "level_0") and len(df) > 0:
+            if pd.api.types.is_integer_dtype(df[col]):
+                vals = df[col].dropna().values
+                if len(vals) > 0 and (vals == np.arange(len(vals))).all():
+                    continue
+
+        non_null = df[col].dropna()
+        if len(non_null) == 0:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col]):
+            num_cols.append(col)
+        else:
+            text_cols.append(col)
+
+    labels: set[str] = set()
+    label_map: dict[str, list[float]] = {}
+
+    # Check which text columns contain actual category labels
+    real_text_cols = []
+    for tc in text_cols:
+        vals = [str(v).strip().lower() for v in df[tc].dropna().values]
+        if any(v not in GENERIC_HEADERS and not v.isdigit() for v in vals):
+            real_text_cols.append(tc)
+
+    # Which numeric columns represent category headers (wide format)
+    # They are category headers if non-generic and either len(df) == 1 or multiple numeric columns
+    non_generic_num_cols = [c for c in num_cols if not _is_generic_header(c)]
+    is_wide_num_cols = len(non_generic_num_cols) > 0 and (len(df) == 1 or len(non_generic_num_cols) > 1)
+
+    # A) Extract labels from text cells
+    if len(real_text_cols) > 0:
+        for idx in range(len(df)):
+            row_labels = []
+            for tc in real_text_cols:
+                v = df[tc].iloc[idx]
+                if pd.notna(v):
+                    lbl = str(v).strip().lower()
+                    if lbl not in GENERIC_HEADERS and not lbl.isdigit():
+                        row_labels.append(lbl)
+
+            if not row_labels:
+                continue
+
+            # Row's numeric values
+            row_nums = []
+            for nc in num_cols:
+                v = df[nc].iloc[idx]
+                if isinstance(v, (int, float, np.number)) and not isinstance(v, (bool, np.bool_)):
+                    if np.isfinite(v):
+                        row_nums.append(float(v))
+
+            for rlbl in row_labels:
+                labels.add(rlbl)
+                if rlbl not in label_map:
+                    label_map[rlbl] = []
+                label_map[rlbl].extend(row_nums)
+
+    # B) Extract labels from wide numeric column headers
+    if is_wide_num_cols:
+        for nc in non_generic_num_cols:
+            col_lbl = str(nc).strip().lower()
+            labels.add(col_lbl)
+            col_nums = []
+            for v in df[nc].dropna().values:
+                if isinstance(v, (int, float, np.number)) and not isinstance(v, (bool, np.bool_)):
+                    if np.isfinite(v):
+                        col_nums.append(float(v))
+            if col_lbl not in label_map:
+                label_map[col_lbl] = []
+            label_map[col_lbl].extend(col_nums)
+
+    return labels, label_map, all_numbers
+
+
+def results_match_with_trace(a: Any, b: Any, tolerance: float = 0.01) -> tuple[bool, dict[str, Any]]:
+    """
+    Compares two analytical calculation results for equality within a given tolerance.
+    Returns a tuple of (matched: bool, trace: dict) where trace contains:
+    - 'branch': 'scalar vs scalar', 'scalar vs table', 'scalar vs table (single numeric cell)',
+                'table same layout', 'layout-independent fallback', 'shape mismatch', or 'type mismatch'
+    - 'reason': detailed diagnostic reason explaining why it matched or mismatched
+    - 'matched': boolean equal to the matched flag
     """
     if a is None or b is None:
-        return a is b
+        matched = (a is b)
+        reason = "both values are None" if matched else f"one value is None ({'a' if a is None else 'b'})"
+        return matched, {"branch": "scalar vs scalar", "reason": reason, "matched": matched}
 
-    # Convert Series to DataFrame via reset_index
+    is_a_scalar = isinstance(a, (int, float, str, bool, np.number, np.bool_))
+    is_b_scalar = isinstance(b, (int, float, str, bool, np.number, np.bool_))
+
+    # 1. Scalar vs Scalar comparison
+    if is_a_scalar and is_b_scalar:
+        branch = "scalar vs scalar"
+        if isinstance(a, (int, float, np.number)) and isinstance(b, (int, float, np.number)):
+            if pd.isna(a) and pd.isna(b):
+                return True, {"branch": branch, "reason": "both values are NaN", "matched": True}
+            if pd.isna(a) or pd.isna(b):
+                return False, {"branch": branch, "reason": f"one value is NaN: {a} vs {b}", "matched": False}
+            denom = max(abs(float(a)), abs(float(b)))
+            if denom == 0:
+                return True, {"branch": branch, "reason": "both values are 0.0", "matched": True}
+            rel_diff = abs(float(a) - float(b)) / denom
+            if rel_diff <= tolerance:
+                return True, {
+                    "branch": branch,
+                    "reason": f"numeric values match within {tolerance:.1%} tolerance ({float(a):.4g} vs {float(b):.4g}, rel_diff={rel_diff:.4f})",
+                    "matched": True,
+                }
+            else:
+                return False, {
+                    "branch": branch,
+                    "reason": f"numeric values differ ({float(a):.4g} vs {float(b):.4g}, rel_diff={rel_diff:.4f} > {tolerance:.1%})",
+                    "matched": False,
+                }
+        else:
+            str_a = str(a).strip().lower()
+            str_b = str(b).strip().lower()
+            if str_a == str_b:
+                return True, {"branch": branch, "reason": f"scalar text strings match: '{str(a).strip()}'", "matched": True}
+            else:
+                return False, {"branch": branch, "reason": f"scalar text strings differ: '{str(a).strip()}' vs '{str(b).strip()}'", "matched": False}
+
+    # 2. Scalar vs Table comparison (Series or DataFrame)
+    is_a_table = isinstance(a, (pd.DataFrame, pd.Series))
+    is_b_table = isinstance(b, (pd.DataFrame, pd.Series))
+
+    if (is_a_scalar and is_b_table) or (is_b_scalar and is_a_table):
+        scalar_val = a if is_a_scalar else b
+        table_val = b if is_a_scalar else a
+
+        numeric_cells = _extract_numeric_cells(table_val)
+        if len(numeric_cells) == 1:
+            target_num = numeric_cells[0]
+            branch = "scalar vs table (single numeric cell)"
+            if isinstance(scalar_val, (int, float, np.number)) and not isinstance(scalar_val, (bool, np.bool_)):
+                num_scalar = float(scalar_val)
+                denom = max(abs(num_scalar), abs(target_num))
+                rel_diff = 0.0 if denom == 0 else abs(num_scalar - target_num) / denom
+                matched = (rel_diff <= tolerance)
+                if matched:
+                    reason = (
+                        f"numeric scalar matches single numeric table cell within {tolerance:.1%} tolerance "
+                        f"({num_scalar:.4g} vs {target_num:.4g}, rel_diff={rel_diff:.4f})"
+                    )
+                else:
+                    reason = (
+                        f"numeric scalar differs from single numeric table cell "
+                        f"({num_scalar:.4g} vs {target_num:.4g}, rel_diff={rel_diff:.4f} > {tolerance:.1%})"
+                    )
+                return matched, {"branch": branch, "reason": reason, "matched": matched}
+            elif isinstance(scalar_val, str):
+                try:
+                    num_scalar = float(scalar_val.strip())
+                    denom = max(abs(num_scalar), abs(target_num))
+                    rel_diff = 0.0 if denom == 0 else abs(num_scalar - target_num) / denom
+                    matched = (rel_diff <= tolerance)
+                    if matched:
+                        reason = (
+                            f"numeric scalar matches single numeric table cell within {tolerance:.1%} tolerance "
+                            f"({num_scalar:.4g} vs {target_num:.4g}, rel_diff={rel_diff:.4f})"
+                        )
+                    else:
+                        reason = (
+                            f"numeric scalar differs from single numeric table cell "
+                            f"({num_scalar:.4g} vs {target_num:.4g}, rel_diff={rel_diff:.4f} > {tolerance:.1%})"
+                        )
+                    return matched, {"branch": branch, "reason": reason, "matched": matched}
+                except ValueError:
+                    return False, {"branch": branch, "reason": f"scalar string '{scalar_val}' is not numeric", "matched": False}
+            else:
+                return False, {"branch": branch, "reason": f"scalar type {type(scalar_val).__name__} is not numeric", "matched": False}
+        else:
+            branch = "scalar vs table"
+            cell_count = table_val.size
+            reason = f"scalar vs table with {cell_count} cells, not comparable"
+            return False, {"branch": branch, "reason": reason, "matched": False}
+
+    # Convert Series to DataFrame for table-vs-table comparison
     if isinstance(a, pd.Series):
         a = a.reset_index()
     if isinstance(b, pd.Series):
         b = b.reset_index()
 
-    # Normalize 1x1 DataFrame to scalar if compared against a scalar
-    is_a_scalar = isinstance(a, (int, float, str, bool, np.number, np.bool_))
-    is_b_scalar = isinstance(b, (int, float, str, bool, np.number, np.bool_))
-
-    if isinstance(a, pd.DataFrame) and a.shape == (1, 1) and is_b_scalar:
-        a = a.iloc[0, 0]
-        is_a_scalar = True
-    elif isinstance(b, pd.DataFrame) and b.shape == (1, 1) and is_a_scalar:
-        b = b.iloc[0, 0]
-        is_b_scalar = True
-
-    # 1. Scalar comparison
-    if is_a_scalar and is_b_scalar:
-        if isinstance(a, (int, float, np.number)) and isinstance(b, (int, float, np.number)):
-            if pd.isna(a) and pd.isna(b):
-                return True
-            if pd.isna(a) or pd.isna(b):
-                return False
-            denom = max(abs(float(a)), abs(float(b)))
-            if denom == 0:
-                return True
-            return (abs(float(a) - float(b)) / denom) <= tolerance
-        return str(a).strip() == str(b).strip()
-
-    # 2. DataFrame comparison
+    # 3. DataFrame vs DataFrame comparison
     if isinstance(a, pd.DataFrame) and isinstance(b, pd.DataFrame):
         if len(a) == 0 and len(b) == 0:
-            return True
+            return True, {"branch": "table same layout", "reason": "both DataFrames are empty", "matched": True}
+
+        shapes_match = (len(a) == len(b) and a.shape[1] == b.shape[1])
+        diff_reason = ""
 
         # Standard elementwise comparison if shapes match
-        if len(a) == len(b) and a.shape[1] == b.shape[1]:
+        if shapes_match:
             # Align columns by name if set of columns is identical
             if set(a.columns) == set(b.columns):
                 b_aligned = b[list(a.columns)]
@@ -102,40 +323,103 @@ def results_match(a: Any, b: Any, tolerance: float = 0.01) -> bool:
                     rel_diff = diff / denom
                     if (rel_diff > tolerance).any():
                         match_standard = False
+                        max_d = float(rel_diff.max())
+                        diff_reason = f"numeric column '{col_a.name}' values differ (max rel_diff={max_d:.4f} > {tolerance:.1%})"
                         break
                 else:
-                    str_a = col_a.astype(str).str.strip()
-                    str_b = col_b.astype(str).str.strip()
+                    str_a = col_a.astype(str).str.strip().str.lower()
+                    str_b = col_b.astype(str).str.strip().str.lower()
                     if (str_a != str_b).any():
                         match_standard = False
+                        diff_mask = (str_a != str_b)
+                        first_a = str_a[diff_mask].iloc[:3].tolist()
+                        first_b = str_b[diff_mask].iloc[:3].tolist()
+                        diff_reason = f"text labels differ: {first_a} vs {first_b}"
                         break
 
             if match_standard:
-                return True
+                return True, {"branch": "table same layout", "reason": "all rows and columns match within tolerance", "matched": True}
+        else:
+            diff_reason = f"shape mismatch: {a.shape} vs {b.shape}"
 
         # Layout-independent comparison fallback:
-        # Collect all numeric values from both DataFrames, sort them, and compare
-        nums_a: list[float] = []
-        for col in a.select_dtypes(include=[np.number]).columns:
-            nums_a.extend(a[col].dropna().astype(float).tolist())
+        # Extract labels, label-to-value map, and all numeric values
+        labels_a, label_map_a, all_nums_a = _extract_labels_and_values(a)
+        labels_b, label_map_b, all_nums_b = _extract_labels_and_values(b)
 
-        nums_b: list[float] = []
-        for col in b.select_dtypes(include=[np.number]).columns:
-            nums_b.extend(b[col].dropna().astype(float).tolist())
+        # If either table has text labels, require label sets to match
+        if len(labels_a) > 0 or len(labels_b) > 0:
+            if labels_a != labels_b:
+                diff_a = sorted(labels_a - labels_b)[:3]
+                diff_b = sorted(labels_b - labels_a)[:3]
+                reason = f"text labels differ: {diff_a} vs {diff_b}"
+                branch = "table same layout" if shapes_match else "shape mismatch"
+                return False, {"branch": branch, "reason": reason, "matched": False}
+
+            # Label sets match: compare numbers per label within tolerance
+            for lbl in sorted(labels_a):
+                vals_a = label_map_a.get(lbl, [])
+                vals_b = label_map_b.get(lbl, [])
+                if len(vals_a) != len(vals_b):
+                    branch = "table same layout" if shapes_match else "shape mismatch"
+                    return False, {
+                        "branch": branch,
+                        "reason": f"count of values for label '{lbl}' differs: {len(vals_a)} vs {len(vals_b)}",
+                        "matched": False,
+                    }
+                sorted_a = sorted(vals_a)
+                sorted_b = sorted(vals_b)
+                for va, vb in zip(sorted_a, sorted_b):
+                    denom = max(abs(va), abs(vb))
+                    rel_diff = 0.0 if denom == 0 else abs(va - vb) / denom
+                    if rel_diff > tolerance:
+                        branch = "table same layout" if shapes_match else "shape mismatch"
+                        return False, {
+                            "branch": branch,
+                            "reason": diff_reason or f"numeric values differ for label '{lbl}' ({va:.4g} vs {vb:.4g}, rel_diff={rel_diff:.4f} > {tolerance:.1%})",
+                            "matched": False,
+                        }
+
+            return True, {
+                "branch": "layout-independent fallback",
+                "reason": f"layout-independent comparison matched {len(labels_a)} labels and numeric values within {tolerance:.1%} tolerance",
+                "matched": True,
+            }
+
+        # Zero text labels in both tables: fall back to comparing sorted numeric values
+        nums_a = sorted(all_nums_a)
+        nums_b = sorted(all_nums_b)
 
         if len(nums_a) > 0 and len(nums_a) == len(nums_b):
-            nums_a.sort()
-            nums_b.sort()
             diffs = [
-                abs(va - vb) / max(abs(va), abs(vb), 1e-9)
+                0.0 if max(abs(va), abs(vb)) == 0 else abs(va - vb) / max(abs(va), abs(vb))
                 for va, vb in zip(nums_a, nums_b)
             ]
             if all(d <= tolerance for d in diffs):
-                return True
+                return True, {
+                    "branch": "layout-independent fallback",
+                    "reason": f"layout-independent comparison matched {len(nums_a)} sorted numeric values within tolerance",
+                    "matched": True,
+                }
 
-        return False
+        # If layout-independent comparison did not match
+        branch_name = "table same layout" if shapes_match else "shape mismatch"
+        return False, {"branch": branch_name, "reason": diff_reason or "numeric values differ", "matched": False}
 
-    return False
+    return False, {"branch": "type mismatch", "reason": f"unsupported types: {type(a).__name__} vs {type(b).__name__}", "matched": False}
+
+
+def results_match(a: Any, b: Any, tolerance: float = 0.01) -> bool:
+    """
+    Compares two analytical calculation results for equality within a given tolerance:
+    - Scalars: compares numeric values within relative tolerance (default 1%),
+      handling zero and NaN safely.
+    - DataFrames: compares after sorting both by their first column and resetting
+      index. Compares numeric columns within tolerance and text columns exactly.
+      Row counts and column counts must match.
+    """
+    matched, _ = results_match_with_trace(a, b, tolerance=tolerance)
+    return matched
 
 
 # ============================================================================
@@ -396,24 +680,91 @@ Store the answer in a variable called result. Use only pd and np, no imports. Re
 
     if res["status"] != "ok":
         # Mark inconclusive (not a fail) per spec
-        return "inconclusive", None, f"Recomputation code failed: {res.get('error')}", recomp_code
+        fail_trace = {"branch": "recomputation_error", "reason": f"Recomputation code failed: {res.get('error')}", "matched": False}
+        return "inconclusive", None, f"Recomputation code failed: {res.get('error')}", recomp_code, fail_trace
 
     recomputed_val = res.get("result")
-    matches = results_match(original_res, recomputed_val)
+    matches, trace = results_match_with_trace(original_res, recomputed_val)
 
     if matches:
         note = ""
         if isinstance(original_res, pd.DataFrame) and isinstance(recomputed_val, pd.DataFrame):
             if original_res.shape != recomputed_val.shape or list(original_res.columns) != list(recomputed_val.columns):
                 note = "same values, different layout"
-        return "pass", recomputed_val, note, recomp_code
+        return "pass", recomputed_val, note, recomp_code, trace
     else:
-        return "fail", recomputed_val, "Independent recomputation gave a different result", recomp_code
+        return "fail", recomputed_val, "Independent recomputation gave a different result", recomp_code, trace
 
 
 # ============================================================================
 # Check 3: Logic Review (LLM Advisory Only)
 # ============================================================================
+
+def _result_to_markdown_preview(res: Any, max_rows: int = 10) -> str:
+    """Formats a DataFrame, Series, or scalar as a clean markdown table preview."""
+    if isinstance(res, pd.DataFrame):
+        if res.empty:
+            return "*Empty DataFrame*"
+        df_sub = res.head(max_rows)
+        headers = [str(c) for c in df_sub.columns]
+        header_line = "| " + " | ".join(headers) + " |"
+        sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+        rows = []
+        for _, row in df_sub.iterrows():
+            rows.append("| " + " | ".join(str(v) for v in row.values) + " |")
+        trunc = f"\n*(Showing first {max_rows} of {len(res)} rows)*" if len(res) > max_rows else ""
+        return "\n".join([header_line, sep_line] + rows) + trunc
+    elif isinstance(res, pd.Series):
+        if res.empty:
+            return "*Empty Series*"
+        df_sub = res.head(max_rows).to_frame().reset_index()
+        headers = [str(c) for c in df_sub.columns]
+        header_line = "| " + " | ".join(headers) + " |"
+        sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+        rows = []
+        for _, row in df_sub.iterrows():
+            rows.append("| " + " | ".join(str(v) for v in row.values) + " |")
+        trunc = f"\n*(Showing first {max_rows} of {len(res)} items)*" if len(res) > max_rows else ""
+        return "\n".join([header_line, sep_line] + rows) + trunc
+    elif res is not None:
+        return f"`{res}`"
+    return "*No result generated*"
+
+
+def _is_formatting_or_type_only_issue(issue_str: str) -> bool:
+    """
+    Returns True if the issue text discusses ONLY Series, DataFrame, index,
+    dtype, or formatting without identifying real mathematical or logical calculation errors.
+    """
+    text = issue_str.lower()
+    type_kw = [
+        "series", "dataframe", "data frame", "index", "dtype",
+        "data type", "formatting", "format", "column naming", "column-naming",
+    ]
+    has_type_mention = any(k in text for k in type_kw)
+
+    if not has_type_mention:
+        return False
+
+    real_kw = [
+        "filter", "aggregation", "aggregate", "double count", "wrong column",
+        "wrong calculation", "unsupported", "calculation", "formula", "missing where",
+        "missing condition", "wrong metric", "incorrect value", "math mismatch", "sum", "mean",
+    ]
+    has_real_issue = any(r in text for r in real_kw)
+    return not has_real_issue
+
+
+def filter_logic_issues(issues: list[str]) -> list[str]:
+    """
+    Filters out advisory issues that complain only about Series, DataFrame, index,
+    dtype, or formatting, while keeping genuine logical and calculation problems.
+    """
+    return [
+        s for s in issues
+        if isinstance(s, str) and s.strip() and not _is_formatting_or_type_only_issue(s)
+    ]
+
 
 def _logic_review(
     question: str,
@@ -425,16 +776,17 @@ def _logic_review(
     Check 3: Solicits an advisory logic review from LLM.
     Issues returned are non-blocking warnings only.
     """
-    prompt = f"""Review this question, code, and result summary for potential logical issues
-(wrong aggregation, missing filter, double counting, wrong column, or unsupported conclusions).
+    preview = _result_to_markdown_preview(res, max_rows=10)
+    prompt = f"""Review this analytical question, pandas code, and result preview for potential logical issues.
+The sandbox automatically converts a pandas Series into a two-column DataFrame, so never report a Series versus DataFrame difference, or any pure formatting, type, index, or column-naming difference, as an issue. Only report problems that can change the numbers: wrong aggregation, missing filter, double counting, wrong column, or a conclusion not supported by the numbers.
 
 Question: {question}
 Pandas Code:
 ```python
 {code}
 ```
-Result summary:
-{_shorten_val(res)}
+Result preview:
+{preview}
 
 Return ONLY JSON: {{"issues": [list of short strings, empty if none]}}"""
 
@@ -443,7 +795,8 @@ Return ONLY JSON: {{"issues": [list of short strings, empty if none]}}"""
         cleaned = _clean_code_fence(reply)
         data = json.loads(cleaned)
         if isinstance(data, dict) and "issues" in data and isinstance(data["issues"], list):
-            return [str(s).strip() for s in data["issues"] if str(s).strip()]
+            raw_issues = [str(s).strip() for s in data["issues"] if str(s).strip()]
+            return filter_logic_issues(raw_issues)
     except (LLMUnavailableError, LLMConfigError):
         raise
     except Exception:
@@ -538,7 +891,7 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             # ----------------------------------------------------------------
             # Check 1: Independent Recomputation
             # ----------------------------------------------------------------
-            c1_status, recomp_res, c1_note, recomp_code = _recompute_independently(
+            recomp_out = _recompute_independently(
                 question=q,
                 original_code=code,
                 original_res=original_res,
@@ -546,6 +899,11 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
                 df=df,
                 call_llm_fn=call_llm,
             )
+            c1_status = recomp_out[0]
+            recomp_res = recomp_out[1]
+            c1_note = recomp_out[2]
+            recomp_code = recomp_out[3]
+            c1_trace = recomp_out[4] if len(recomp_out) > 4 else {}
 
             # ----------------------------------------------------------------
             # Check 2: Rule-Based Checks (Real result problems only)
@@ -610,6 +968,21 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             orig_short = _shorten_val(original_res)
             recomp_short = _shorten_val(recomp_res) if recomp_res is not None else None
 
+            # Capping real recomputed result at 20 rows if DataFrame / Series
+            capped_recomp_res = recomp_res
+            if isinstance(recomp_res, (pd.DataFrame, pd.Series)):
+                capped_recomp_res = recomp_res.head(20).copy()
+
+            # Track which check produced a failure
+            failed_check: str | None = None
+            if verdict == "fail":
+                if c1_status == "fail" and c2_problems:
+                    failed_check = "recomputation_mismatch; rule_check"
+                elif c1_status == "fail":
+                    failed_check = "recomputation_mismatch"
+                elif c2_problems:
+                    failed_check = "rule_check"
+
             # Add to full audit report
             review_report.append({
                 "id": item_id,
@@ -617,9 +990,16 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
                 "verdict": verdict,
                 "reason": reason_str,
                 "warnings": warnings,
+                "logic_warnings": c3_warnings,
                 "takeaway_warning": takeaway_warning,
                 "original_value": orig_short,
                 "recomputed_value": recomp_short,
+                "recomputed_result": capped_recomp_res,
+                "recomputed_code": recomp_code,
+                "recomputation_code": recomp_code,
+                "comparison_trace": c1_trace,
+                "trace": c1_trace,
+                "failed_check": failed_check,
             })
 
             # Record failing items in feedback and caught_errors
@@ -667,15 +1047,24 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
         except Exception as item_err:
             # Failure isolation: treat item as unverified with reason
             warn_msg = f"reviewer could not verify this item: {item_err}"
+            orig_short = _shorten_val(original_res) if "original_res" in locals() else None
+            exc_trace = {"branch": "exception", "reason": str(item_err), "matched": False}
             review_report.append({
                 "id": item_id,
                 "question": q,
                 "verdict": "unverified",
                 "reason": warn_msg,
                 "warnings": [warn_msg],
+                "logic_warnings": [],
                 "takeaway_warning": None,
-                "original_value": _shorten_val(original_res),
+                "original_value": orig_short,
                 "recomputed_value": None,
+                "recomputed_result": None,
+                "recomputed_code": "",
+                "recomputation_code": "",
+                "comparison_trace": exc_trace,
+                "trace": exc_trace,
+                "failed_check": None,
             })
             events.append({
                 "agent": "reviewer",

@@ -1,0 +1,1254 @@
+{
+  "0": {
+    "status": "ok",
+    "answer": 8000,
+    "wrong_variants": [
+      {
+        "label": "Summed order_value_usd instead of counting orders",
+        "code": "result = df['order_value_usd'].sum()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 241782.71
+      },
+      {
+        "label": "Counted distinct metro_city values instead of total orders",
+        "code": "result = df['metro_city'].nunique()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 12
+      }
+    ]
+  },
+  "1": {
+    "status": "ok",
+    "answer": 241782.71,
+    "wrong_variants": [
+      {
+        "label": "Calculated average order value instead of sum",
+        "code": "result = df['order_value_usd'].mean()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 30.222838749999998
+      },
+      {
+        "label": "Summed net_effective_order_price instead of order_value_usd",
+        "code": "result = df['net_effective_order_price'].sum()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": 238854.63
+      }
+    ]
+  },
+  "2": {
+    "status": "ok",
+    "answer": 4.281375,
+    "wrong_variants": [
+      {
+        "label": "Calculated median rating instead of mean",
+        "code": "result = df['customer_rating'].median()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 4.5
+      },
+      {
+        "label": "Averaged confidence_score instead of customer_rating",
+        "code": "result = df['confidence_score'].mean()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": 0.9879763750000002
+      }
+    ]
+  },
+  "3": {
+    "status": "ok",
+    "answer": 12,
+    "wrong_variants": [
+      {
+        "label": "Counted total rows instead of distinct cities",
+        "code": "result = df['metro_city'].count()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 8000
+      },
+      {
+        "label": "Counted distinct cuisine_category instead of metro_city",
+        "code": "result = df['cuisine_category'].nunique()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": 7
+      }
+    ]
+  },
+  "4": {
+    "status": "ok",
+    "answer": 0.0980251234672653,
+    "wrong_variants": [
+      {
+        "label": "Averaged the row-level delivery fee ratio instead of taking ratio of sums",
+        "code": "result = (df['delivery_fee_usd'] / df['order_value_usd']).mean()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 0.18400952823176708
+      },
+      {
+        "label": "Used net_effective_order_price as denominator instead of order_value_usd",
+        "code": "result = df['delivery_fee_usd'].sum() / df['net_effective_order_price'].sum()",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": 0.09922679748766017
+      }
+    ]
+  },
+  "5": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "order_channel",
+        "delivery_distance_km"
+      ],
+      "rows": [
+        [
+          "Dine-In POS",
+          0.0
+        ],
+        [
+          "Online Delivery App",
+          4.641122740247384
+        ],
+        [
+          "Takeaway / Pickup",
+          0.0
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Summed distance instead of calculating average",
+        "code": "result = df.groupby('order_channel')['delivery_distance_km'].sum().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "order_channel",
+            "delivery_distance_km"
+          ],
+          "rows": [
+            [
+              "Dine-In POS",
+              0.0
+            ],
+            [
+              "Online Delivery App",
+              24389.1
+            ],
+            [
+              "Takeaway / Pickup",
+              0.0
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Grouped by customer_spending_tier instead of order_channel",
+        "code": "result = df.groupby('customer_spending_tier')['delivery_distance_km'].mean().reset_index()",
+        "kind": "wrong_groupby_key",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "customer_spending_tier",
+            "delivery_distance_km"
+          ],
+          "rows": [
+            [
+              "Budget-Saver",
+              3.0969531474561656
+            ],
+            [
+              "High-Roller-Gourmet",
+              2.851413189771198
+            ],
+            [
+              "Mid-Tier-Regular",
+              3.0711364717070855
+            ],
+            [
+              "Occasional-Promo-Seeker",
+              3.0075223880597015
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "6": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "restaurant_price_tier",
+        "order_value_usd"
+      ],
+      "rows": [
+        [
+          "$ Budget",
+          50512.05
+        ],
+        [
+          "$$ Moderate",
+          108608.02
+        ],
+        [
+          "$$$ Premium / Fine Dining",
+          82662.64
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Calculated mean order value instead of total sum",
+        "code": "result = df.groupby('restaurant_price_tier')['order_value_usd'].mean().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "restaurant_price_tier",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "$ Budget",
+              14.688005234079675
+            ],
+            [
+              "$$ Moderate",
+              31.30816373594696
+            ],
+            [
+              "$$$ Premium / Fine Dining",
+              75.69838827838828
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Summed discount_applied_usd instead of order_value_usd",
+        "code": "result = df.groupby('restaurant_price_tier')['discount_applied_usd'].sum().reset_index()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "restaurant_price_tier",
+            "discount_applied_usd"
+          ],
+          "rows": [
+            [
+              "$ Budget",
+              6132.46
+            ],
+            [
+              "$$ Moderate",
+              11912.31
+            ],
+            [
+              "$$$ Premium / Fine Dining",
+              8584.09
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "7": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "weather_condition",
+        "actual_delivery_time_min"
+      ],
+      "rows": [
+        [
+          "Clear",
+          8.0
+        ],
+        [
+          "Cloudy / Fog",
+          8.0
+        ],
+        [
+          "Heavy Rain / Storm",
+          8.9
+        ],
+        [
+          "Rainy",
+          8.0
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Calculated mean instead of median delivery time",
+        "code": "result = df.groupby('weather_condition')['actual_delivery_time_min'].mean().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "weather_condition",
+            "actual_delivery_time_min"
+          ],
+          "rows": [
+            [
+              "Clear",
+              10.49910632447296
+            ],
+            [
+              "Cloudy / Fog",
+              10.303428093645485
+            ],
+            [
+              "Heavy Rain / Storm",
+              15.54693572496263
+            ],
+            [
+              "Rainy",
+              12.218407679277243
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Used estimated_prep_time_min instead of actual_delivery_time_min",
+        "code": "result = df.groupby('weather_condition')['estimated_prep_time_min'].median().reset_index()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "weather_condition",
+            "estimated_prep_time_min"
+          ],
+          "rows": [
+            [
+              "Clear",
+              17.0
+            ],
+            [
+              "Cloudy / Fog",
+              18.0
+            ],
+            [
+              "Heavy Rain / Storm",
+              18.0
+            ],
+            [
+              "Rainy",
+              18.0
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "8": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "metro_city",
+        "order_value_usd"
+      ],
+      "rows": [
+        [
+          "Berlin",
+          28.606776649746188
+        ],
+        [
+          "Jakarta",
+          28.673352165725042
+        ],
+        [
+          "London",
+          31.61087360594796
+        ],
+        [
+          "Mumbai",
+          31.90709265175719
+        ],
+        [
+          "New York",
+          29.397235890014468
+        ],
+        [
+          "Paris",
+          30.263407407407406
+        ],
+        [
+          "Sao Paulo",
+          28.704134078212295
+        ],
+        [
+          "Seoul",
+          30.80203125
+        ],
+        [
+          "Singapore",
+          28.79129310344827
+        ],
+        [
+          "Sydney",
+          30.935722222222218
+        ],
+        [
+          "Tokyo",
+          29.909862778730698
+        ],
+        [
+          "Toronto",
+          30.56023489932886
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Omitted the order_channel filter for Online Delivery App",
+        "code": "result = df.groupby('metro_city')['order_value_usd'].mean().reset_index()",
+        "kind": "missing_filter",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "metro_city",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "Berlin",
+              28.630034843205575
+            ],
+            [
+              "Jakarta",
+              29.27492718446602
+            ],
+            [
+              "London",
+              31.61080545229244
+            ],
+            [
+              "Mumbai",
+              31.108296146044626
+            ],
+            [
+              "New York",
+              29.992108910891087
+            ],
+            [
+              "Paris",
+              30.816766169154228
+            ],
+            [
+              "Sao Paulo",
+              29.401630824372756
+            ],
+            [
+              "Seoul",
+              30.43954183266932
+            ],
+            [
+              "Singapore",
+              29.65399408284024
+            ],
+            [
+              "Sydney",
+              30.55349565217391
+            ],
+            [
+              "Tokyo",
+              30.529277899343544
+            ],
+            [
+              "Toronto",
+              30.820689655172416
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Summed order_value_usd instead of taking the average",
+        "code": "result = df[df['order_channel'] == 'Online Delivery App'].groupby('metro_city')['order_value_usd'].sum().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "metro_city",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "Berlin",
+              11271.069999999998
+            ],
+            [
+              "Jakarta",
+              15225.549999999997
+            ],
+            [
+              "London",
+              17006.65
+            ],
+            [
+              "Mumbai",
+              9986.92
+            ],
+            [
+              "New York",
+              20313.489999999998
+            ],
+            [
+              "Paris",
+              12256.68
+            ],
+            [
+              "Sao Paulo",
+              10276.080000000002
+            ],
+            [
+              "Seoul",
+              9856.65
+            ],
+            [
+              "Singapore",
+              13359.159999999998
+            ],
+            [
+              "Sydney",
+              11136.859999999999
+            ],
+            [
+              "Tokyo",
+              17437.449999999997
+            ],
+            [
+              "Toronto",
+              9106.95
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "9": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "is_peak_hour",
+        "restaurant_price_tier",
+        "net_effective_order_price"
+      ],
+      "rows": [
+        [
+          false,
+          "$ Budget",
+          15.761199801685672
+        ],
+        [
+          false,
+          "$$ Moderate",
+          30.25357994041708
+        ],
+        [
+          false,
+          "$$$ Premium / Fine Dining",
+          70.00097222222222
+        ],
+        [
+          true,
+          "$ Budget",
+          16.049866385372713
+        ],
+        [
+          true,
+          "$$ Moderate",
+          31.71515463917526
+        ],
+        [
+          true,
+          "$$$ Premium / Fine Dining",
+          71.63173423423424
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Grouped only by restaurant_price_tier, omitting is_peak_hour",
+        "code": "result = df.groupby('restaurant_price_tier')['net_effective_order_price'].mean().reset_index()",
+        "kind": "wrong_groupby_key",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "restaurant_price_tier",
+            "net_effective_order_price"
+          ],
+          "rows": [
+            [
+              "$ Budget",
+              15.880561209653969
+            ],
+            [
+              "$$ Moderate",
+              30.8666070913808
+            ],
+            [
+              "$$$ Premium / Fine Dining",
+              70.6640293040293
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Averaged order_value_usd instead of net_effective_order_price",
+        "code": "result = df.groupby(['is_peak_hour', 'restaurant_price_tier'])['order_value_usd'].mean().reset_index()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "is_peak_hour",
+            "restaurant_price_tier",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              false,
+              "$ Budget",
+              14.770996529499255
+            ],
+            [
+              false,
+              "$$ Moderate",
+              30.951365441906656
+            ],
+            [
+              false,
+              "$$$ Premium / Fine Dining",
+              75.30618827160494
+            ],
+            [
+              true,
+              "$ Budget",
+              14.570288326300986
+            ],
+            [
+              true,
+              "$$ Moderate",
+              31.802041237113404
+            ],
+            [
+              true,
+              "$$$ Premium / Fine Dining",
+              76.2707882882883
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "10": {
+    "status": "ok",
+    "answer": 10806.96,
+    "wrong_variants": [
+      {
+        "label": "Omitted the is_peak_hour filter, summing across all orders",
+        "code": "result = df['discount_applied_usd'].sum()",
+        "kind": "missing_filter",
+        "status": "ok",
+        "answer": 26628.86
+      },
+      {
+        "label": "Filtered for is_peak_hour is False instead of True",
+        "code": "result = df[df['is_peak_hour'] == False]['discount_applied_usd'].sum()",
+        "kind": "missing_filter",
+        "status": "ok",
+        "answer": 15821.9
+      }
+    ]
+  },
+  "11": {
+    "status": "ok",
+    "answer": 31.260942622950818,
+    "wrong_variants": [
+      {
+        "label": "Included only Rainy weather, missing Heavy Rain / Storm",
+        "code": "result = df[df['weather_condition'] == 'Rainy']['total_fulfillment_time_min'].mean()",
+        "kind": "missing_filter",
+        "status": "ok",
+        "answer": 30.323997741389046
+      },
+      {
+        "label": "Averaged actual_delivery_time_min instead of total_fulfillment_time_min",
+        "code": "result = df[df['weather_condition'].isin(['Rainy', 'Heavy Rain / Storm'])]['actual_delivery_time_min'].mean()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": 13.131024590163934
+      }
+    ]
+  },
+  "12": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "cuisine_category",
+        "customer_rating"
+      ],
+      "rows": [
+        [
+          "Burgers & Fast Food",
+          4.38030888030888
+        ],
+        [
+          "Healthy & Bowls",
+          4.350694444444445
+        ],
+        [
+          "Indian & Curries",
+          4.228346456692913
+        ],
+        [
+          "Indonesian & Asian Street Food",
+          4.305405405405406
+        ],
+        [
+          "Italian & Pizza",
+          4.258620689655173
+        ],
+        [
+          "Japanese & Sushi",
+          4.247292418772563
+        ],
+        [
+          "Mexican & Tacos",
+          4.306451612903226
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Omitted the order_value_usd > 50 filter entirely",
+        "code": "result = df.groupby('cuisine_category')['customer_rating'].mean().reset_index()",
+        "kind": "missing_filter",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "customer_rating"
+          ],
+          "rows": [
+            [
+              "Burgers & Fast Food",
+              4.305648769574944
+            ],
+            [
+              "Healthy & Bowls",
+              4.287122969837587
+            ],
+            [
+              "Indian & Curries",
+              4.25765306122449
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              4.281379883624273
+            ],
+            [
+              "Italian & Pizza",
+              4.27710843373494
+            ],
+            [
+              "Japanese & Sushi",
+              4.26525017135024
+            ],
+            [
+              "Mexican & Tacos",
+              4.2799696509863425
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Calculated median rating instead of mean rating for each cuisine",
+        "code": "result = df[df['order_value_usd'] > 50].groupby('cuisine_category')['customer_rating'].median().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "customer_rating"
+          ],
+          "rows": [
+            [
+              "Burgers & Fast Food",
+              4.5
+            ],
+            [
+              "Healthy & Bowls",
+              4.5
+            ],
+            [
+              "Indian & Curries",
+              4.5
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              4.5
+            ],
+            [
+              "Italian & Pizza",
+              4.5
+            ],
+            [
+              "Japanese & Sushi",
+              4.0
+            ],
+            [
+              "Mexican & Tacos",
+              4.5
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "13": {
+    "status": "ok",
+    "answer": 8.92,
+    "wrong_variants": [
+      {
+        "label": "Computed mean logistics_friction_index instead of maximum",
+        "code": "result = df[(df['order_channel'] == 'Online Delivery App') & (df['delivery_distance_km'] >= 5)]['logistics_friction_index'].mean()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": 3.2712230215827334
+      },
+      {
+        "label": "Extracted maximum confidence_score instead of logistics_friction_index",
+        "code": "result = df[(df['order_channel'] == 'Online Delivery App') & (df['delivery_distance_km'] >= 5)]['confidence_score'].max()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": 0.99
+      }
+    ]
+  },
+  "14": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "order_channel",
+        "proportion"
+      ],
+      "rows": [
+        [
+          "Online Delivery App",
+          65.6875
+        ],
+        [
+          "Dine-In POS",
+          19.7125
+        ],
+        [
+          "Takeaway / Pickup",
+          14.6
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Forgot to multiply by 100, leaving proportions between 0 and 1",
+        "code": "result = df['order_channel'].value_counts(normalize=True).reset_index()",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "order_channel",
+            "proportion"
+          ],
+          "rows": [
+            [
+              "Online Delivery App",
+              0.656875
+            ],
+            [
+              "Dine-In POS",
+              0.197125
+            ],
+            [
+              "Takeaway / Pickup",
+              0.146
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Reported raw order counts instead of percentage share",
+        "code": "result = df['order_channel'].value_counts().reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "order_channel",
+            "count"
+          ],
+          "rows": [
+            [
+              "Online Delivery App",
+              5255
+            ],
+            [
+              "Dine-In POS",
+              1577
+            ],
+            [
+              "Takeaway / Pickup",
+              1168
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "15": {
+    "status": "ok",
+    "answer": 58.35,
+    "wrong_variants": [
+      {
+        "label": "Used greater than or equal to 0 (>=) instead of strictly greater than 0 (>)",
+        "code": "result = (df['discount_applied_usd'] >= 0).mean() * 100",
+        "kind": "off_by_one_threshold",
+        "status": "ok",
+        "answer": 100.0
+      },
+      {
+        "label": "Forgot to multiply by 100, leaving a proportion from 0 to 1",
+        "code": "result = float((df['discount_applied_usd'] > 0).mean())",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": 0.5835
+      }
+    ]
+  },
+  "16": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "cuisine_category",
+        "order_value_usd"
+      ],
+      "rows": [
+        [
+          "Burgers & Fast Food",
+          21.77857961803803
+        ],
+        [
+          "Healthy & Bowls",
+          10.788823568070686
+        ],
+        [
+          "Indian & Curries",
+          10.099799940202507
+        ],
+        [
+          "Indonesian & Asian Street Food",
+          14.895639146405465
+        ],
+        [
+          "Italian & Pizza",
+          15.04858639395679
+        ],
+        [
+          "Japanese & Sushi",
+          19.33358675647237
+        ],
+        [
+          "Mexican & Tacos",
+          8.054984576854151
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Calculated order count percentage instead of order_value_usd share",
+        "code": "result = (df['cuisine_category'].value_counts(normalize=True) * 100).reset_index()",
+        "kind": "wrong_column",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "proportion"
+          ],
+          "rows": [
+            [
+              "Burgers & Fast Food",
+              22.35
+            ],
+            [
+              "Japanese & Sushi",
+              18.2375
+            ],
+            [
+              "Italian & Pizza",
+              15.562500000000002
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              15.037500000000001
+            ],
+            [
+              "Healthy & Bowls",
+              10.775
+            ],
+            [
+              "Indian & Curries",
+              9.8
+            ],
+            [
+              "Mexican & Tacos",
+              8.2375
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Forgot to multiply by 100, leaving fractions between 0 and 1",
+        "code": "result = (df.groupby('cuisine_category')['order_value_usd'].sum() / df['order_value_usd'].sum()).reset_index()",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "Burgers & Fast Food",
+              0.2177857961803803
+            ],
+            [
+              "Healthy & Bowls",
+              0.10788823568070686
+            ],
+            [
+              "Indian & Curries",
+              0.10099799940202507
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              0.14895639146405465
+            ],
+            [
+              "Italian & Pizza",
+              0.1504858639395679
+            ],
+            [
+              "Japanese & Sushi",
+              0.1933358675647237
+            ],
+            [
+              "Mexican & Tacos",
+              0.08054984576854152
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "19": {
+    "status": "ok",
+    "answer": 64.46853357422462,
+    "wrong_variants": [
+      {
+        "label": "Used all orders as the denominator instead of only peak-hour orders",
+        "code": "result = (df['order_channel'] == 'Online Delivery App').mean() * 100",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": 65.6875
+      },
+      {
+        "label": "Forgot to multiply by 100, leaving a proportion from 0 to 1",
+        "code": "result = float((df[df['is_peak_hour'] == True]['order_channel'] == 'Online Delivery App').mean())",
+        "kind": "wrong_denominator",
+        "status": "ok",
+        "answer": 0.6446853357422463
+      }
+    ]
+  },
+  "17": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "metro_city",
+        "order_value_usd"
+      ],
+      "rows": [
+        [
+          "New York",
+          30292.03
+        ],
+        [
+          "Tokyo",
+          27903.76
+        ],
+        [
+          "London",
+          25509.92
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Selected bottom 3 (smallest) instead of top 3 (largest)",
+        "code": "result = df.groupby('metro_city')['order_value_usd'].sum().nsmallest(3).reset_index()",
+        "kind": "wrong_top_n_direction",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "metro_city",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "Toronto",
+              14300.800000000001
+            ],
+            [
+              "Seoul",
+              15280.65
+            ],
+            [
+              "Mumbai",
+              15336.390000000001
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Ranked by average order value instead of total sum",
+        "code": "result = df.groupby('metro_city')['order_value_usd'].mean().nlargest(3).reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "metro_city",
+            "order_value_usd"
+          ],
+          "rows": [
+            [
+              "London",
+              31.61080545229244
+            ],
+            [
+              "Mumbai",
+              31.108296146044626
+            ],
+            [
+              "Toronto",
+              30.820689655172416
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "18": {
+    "status": "ok",
+    "answer": {
+      "columns": [
+        "cuisine_category",
+        "customer_rating"
+      ],
+      "rows": [
+        [
+          "Indian & Curries",
+          4.25765306122449
+        ],
+        [
+          "Japanese & Sushi",
+          4.26525017135024
+        ],
+        [
+          "Italian & Pizza",
+          4.27710843373494
+        ],
+        [
+          "Mexican & Tacos",
+          4.2799696509863425
+        ],
+        [
+          "Indonesian & Asian Street Food",
+          4.281379883624273
+        ]
+      ]
+    },
+    "wrong_variants": [
+      {
+        "label": "Selected top 5 highest ratings instead of lowest 5",
+        "code": "result = df.groupby('cuisine_category')['customer_rating'].mean().nlargest(5).reset_index()",
+        "kind": "wrong_top_n_direction",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "customer_rating"
+          ],
+          "rows": [
+            [
+              "Burgers & Fast Food",
+              4.305648769574944
+            ],
+            [
+              "Healthy & Bowls",
+              4.287122969837587
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              4.281379883624273
+            ],
+            [
+              "Mexican & Tacos",
+              4.2799696509863425
+            ],
+            [
+              "Italian & Pizza",
+              4.27710843373494
+            ]
+          ]
+        }
+      },
+      {
+        "label": "Ranked by total sum of ratings instead of average rating",
+        "code": "result = df.groupby('cuisine_category')['customer_rating'].sum().nsmallest(5).reset_index()",
+        "kind": "wrong_aggregation",
+        "status": "ok",
+        "answer": {
+          "columns": [
+            "cuisine_category",
+            "customer_rating"
+          ],
+          "rows": [
+            [
+              "Mexican & Tacos",
+              2820.5
+            ],
+            [
+              "Indian & Curries",
+              3338.0
+            ],
+            [
+              "Healthy & Bowls",
+              3695.5
+            ],
+            [
+              "Indonesian & Asian Street Food",
+              5150.5
+            ],
+            [
+              "Italian & Pizza",
+              5325.0
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -24,6 +24,7 @@ from components.ui_state import (
 )
 from components.agent_cards import render_agent_cards
 from components.activity_feed import render_feed
+from components.results_tabs import render_results
 from graph import run_pipeline
 from llm import check_llm_available, LLMUnavailableError, LLMConfigError
 
@@ -462,7 +463,9 @@ if is_dataset_loaded:
                         unsafe_allow_html=True,
                     )
 
-                st.info("Results tabs come in the next step", icon="ℹ️")
+                if summary["final_status"] != "failed":
+                    st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+                    render_results(st.session_state.final_state)
 
 
 # ============================================================================

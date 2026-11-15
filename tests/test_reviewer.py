@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from agents.reviewer import reviewer_node, results_match, rule_checks
+from agents.reviewer import reviewer_node, results_match, results_match_with_trace, rule_checks, filter_logic_issues
 from state import new_state
 
 
@@ -363,3 +363,170 @@ def test_resilience_when_item_breaks(tmp_path: Path):
     assert report["verdict"] == "unverified"
     assert any("could not verify this item" in w for w in report["warnings"])
     assert len(res["review_feedback"]) == 0
+
+
+def test_filter_logic_issues_drops_formatting_only_keeps_real_issues():
+    """filter_logic_issues removes Series/DataFrame/formatting complaints while retaining real errors."""
+    raw_issues = [
+        "The sandbox returned a Series instead of a DataFrame",
+        "Pure formatting difference in output index naming",
+        "Incorrect dtype: column is object instead of float64",
+        "missing filter on date column",
+        "wrong aggregation: used sum instead of average",
+        "double counting rows due to missing group by filter",
+        "DataFrame column names do not match expected format",
+    ]
+
+    filtered = filter_logic_issues(raw_issues)
+
+    # Should keep only the 3 real issues:
+    assert len(filtered) == 3
+    assert "missing filter on date column" in filtered
+    assert "wrong aggregation: used sum instead of average" in filtered
+    assert "double counting rows due to missing group by filter" in filtered
+
+    # Formatting-only issues dropped:
+    assert not any("Series instead of a DataFrame" in x for x in filtered)
+    assert not any("formatting difference" in x for x in filtered)
+    assert not any("column names do not match" in x for x in filtered)
+    assert not any("Incorrect dtype" in x for x in filtered)
+
+
+def test_logic_review_prompt_includes_markdown_preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Check 3 prompt includes a real preview table and Series/DataFrame instruction."""
+    df = pd.DataFrame({"sales": [10, 20]})
+    state = setup_test_state(tmp_path, df)
+    state["analysis_results"] = [
+        {"id": 0, "question": "Total sales?", "code": "result = df['sales'].sum()", "result": pd.DataFrame({"sales": [30]}), "status": "ok"}
+    ]
+
+    captured_prompts = []
+
+    def mock_call(p: str) -> str:
+        captured_prompts.append(p)
+        if "recomputed" in p.lower() or "independent" in p.lower():
+            return "result = df['sales'].sum()"
+        return '{"issues": []}'
+
+    monkeypatch.setattr("agents.reviewer.call_llm", mock_call)
+    reviewer_node(state)
+
+    # Find the logic review prompt
+    logic_prompts = [p for p in captured_prompts if "never report a Series versus DataFrame difference" in p]
+    assert len(logic_prompts) == 1
+    prompt = logic_prompts[0]
+
+    # Verify table preview and instruction are in prompt
+    assert "| sales |" in prompt
+    assert "| 30 |" in prompt
+    assert "The sandbox automatically converts a pandas Series into a two-column DataFrame" in prompt
+    assert "Only report problems that can change the numbers" in prompt
+
+
+def test_results_match_bug1_and_bug2_regressions():
+    """Regression tests for Bug 1 (layout-independent labels) and Bug 2 (scalar vs single-cell table)."""
+
+    # 1. near-tied values with different labels -> mismatch (and the trace reason mentions the labels)
+    df_labels_a = pd.DataFrame({
+        "cuisine_category": ["Burgers & Fast Food", "Healthy & Bowls", "Salads"],
+        "customer_rating": [4.10, 4.12, 4.14],
+    })
+    df_labels_b = pd.DataFrame({
+        "cuisine_category": ["Indian & Curries", "Japanese & Sushi", "Thai & Noodles"],
+        "customer_rating": [4.10, 4.12, 4.14],
+    })
+    matched, trace = results_match_with_trace(df_labels_a, df_labels_b)
+    assert matched is False
+    assert "text labels differ" in trace["reason"]
+    # Differing labels are mentioned in the trace reason
+    assert "burgers & fast food" in trace["reason"] or "Burgers & Fast Food" in trace["reason"]
+    assert "indian & curries" in trace["reason"] or "Indian & Curries" in trace["reason"]
+    assert results_match(df_labels_a, df_labels_b) is False
+
+    # 2. same labels in different row order -> match
+    df_order_a = pd.DataFrame({
+        "cuisine_category": ["Sandwiches", "Mexican & Tacos", "Italian & Pasta"],
+        "customer_rating": [4.20, 3.85, 4.50],
+    })
+    df_order_b = pd.DataFrame({
+        "cuisine_category": ["Italian & Pasta", "Sandwiches", "Mexican & Tacos"],
+        "customer_rating": [4.50, 4.20, 3.85],
+    })
+    matched, trace = results_match_with_trace(df_order_a, df_order_b)
+    assert matched is True
+    assert results_match(df_order_a, df_order_b) is True
+
+    # 3. long table vs equivalent wide table -> match
+    df_long = pd.DataFrame({
+        "cuisine_category": ["Bakery & Desserts", "Coffee & Beverages"],
+        "order_value_usd": [1520.50, 890.25],
+    })
+    df_wide = pd.DataFrame({
+        "Bakery & Desserts": [1520.50],
+        "Coffee & Beverages": [890.25],
+    })
+    matched, trace = results_match_with_trace(df_long, df_wide)
+    assert matched is True
+    assert trace["branch"] == "layout-independent fallback"
+    assert results_match(df_long, df_wide) is True
+
+    # Also reverse comparison (wide vs long)
+    matched_rev, trace_rev = results_match_with_trace(df_wide, df_long)
+    assert matched_rev is True
+    assert trace_rev["branch"] == "layout-independent fallback"
+    assert results_match(df_wide, df_long) is True
+
+    # 4. scalar vs table with 1 label cell and 1 number: equal -> match, different -> mismatch
+    df_single_cell_match = pd.DataFrame({
+        "is_peak_hour": [True],
+        "total_discount": [456.78],
+    })
+    matched, trace = results_match_with_trace(456.78, df_single_cell_match)
+    assert matched is True
+    assert trace["branch"] == "scalar vs table (single numeric cell)"
+    assert results_match(456.78, df_single_cell_match) is True
+
+    matched_rev, trace_rev = results_match_with_trace(df_single_cell_match, 456.78)
+    assert matched_rev is True
+    assert trace_rev["branch"] == "scalar vs table (single numeric cell)"
+    assert results_match(df_single_cell_match, 456.78) is True
+
+    df_single_cell_diff = pd.DataFrame({
+        "is_peak_hour": [True],
+        "total_discount": [999.99],
+    })
+    matched_diff, trace_diff = results_match_with_trace(456.78, df_single_cell_diff)
+    assert matched_diff is False
+    assert trace_diff["branch"] == "scalar vs table (single numeric cell)"
+    assert results_match(456.78, df_single_cell_diff) is False
+
+    # 1x1 table
+    df_1x1 = pd.DataFrame([[456.78]])
+    matched_1x1, trace_1x1 = results_match_with_trace(456.78, df_1x1)
+    assert matched_1x1 is True
+    assert trace_1x1["branch"] == "scalar vs table (single numeric cell)"
+    assert results_match(456.78, df_1x1) is True
+
+    # 5. scalar vs table with 2 numeric cells -> not comparable
+    df_multi_cell = pd.DataFrame({
+        "category": ["Bakery & Desserts", "Coffee & Beverages"],
+        "count": [10.0, 20.0],
+    })
+    matched, trace = results_match_with_trace(10.0, df_multi_cell)
+    assert matched is False
+    assert trace["branch"] == "scalar vs table"
+    assert "not comparable" in trace["reason"]
+    assert results_match(10.0, df_multi_cell) is False
+
+    # 6. text labels that differ only in case or whitespace -> match
+    df_case_space_a = pd.DataFrame({
+        "cuisine_category": ["  Mediterranean  ", "STREET FOOD\t"],
+        "avg_time": [28.4, 19.2],
+    })
+    df_case_space_b = pd.DataFrame({
+        "cuisine_category": ["mediterranean", "Street Food"],
+        "avg_time": [28.4, 19.2],
+    })
+    matched, trace = results_match_with_trace(df_case_space_a, df_case_space_b)
+    assert matched is True
+    assert results_match(df_case_space_a, df_case_space_b) is True

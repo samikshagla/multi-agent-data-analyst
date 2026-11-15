@@ -434,7 +434,7 @@ def build_graph(nodes: dict[str, Callable] | None = None, max_retries: int = 3) 
 # Pipeline Runner: Synchronous & Streaming
 # ============================================================================
 
-def _compute_run_stats(state: dict[str, Any], elapsed: float, usage: dict[str, int]) -> dict[str, Any]:
+def _compute_run_stats(state: dict[str, Any], elapsed: float, usage: dict[str, Any]) -> dict[str, Any]:
     """Computes comprehensive execution performance and error recovery metrics."""
     caught_errors = state.get("caught_errors", [])
     review_report = state.get("review_report", [])
@@ -456,12 +456,18 @@ def _compute_run_stats(state: dict[str, Any], elapsed: float, usage: dict[str, i
         1 for r in review_report if isinstance(r, dict) and r.get("verdict") == "fail"
     ) + sum(1 for item in analysis_results if item.get("status") != "ok")
 
+    by_model = usage.get("by_model", {})
+    models_used = list(by_model.keys())
+
     return {
         "time_seconds": elapsed,
         "llm_calls": usage.get("calls", 0),
         "tokens": usage.get("total_tokens", 0),
         "input_tokens": usage.get("input_tokens", 0),
         "output_tokens": usage.get("output_tokens", 0),
+        "by_model": by_model,
+        "models_used": models_used,
+        "multiple_models_used": len(models_used) > 1,
         "retries_used": state.get("retry_count", 0),
         "items_flagged_first_pass": items_flagged_first_pass,
         "fixed_by_retry": fixed_by_retry,

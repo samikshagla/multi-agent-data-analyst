@@ -213,3 +213,30 @@ def test_review_feedback_cleared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     assert "review_feedback" in res
     assert res["review_feedback"] == []
+
+
+def test_predefined_questions_skips_question_generation_llm_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test 7: When state['questions'] is already provided, skip question generation LLM call."""
+    df = pd.DataFrame({"sales": [100, 200, 300]})
+    state = setup_test_state(tmp_path, df)
+    state["questions"] = ["What is the total sales?"]
+
+    # Only one LLM response needed: code generation for the pre-defined question
+    mock_llm = MockLLMSequence(['result = df["sales"].sum()'])
+    monkeypatch.setattr("agents.analyst.call_llm", mock_llm)
+
+    res = analyst_node(state)
+
+    # Question generation LLM call was skipped
+    assert len(mock_llm.prompts) == 1
+    assert "Write pandas code that answers the question" in mock_llm.prompts[0]
+    assert "What is the total sales?" in mock_llm.prompts[0]
+    assert "propose 3-5 insightful business questions" not in mock_llm.prompts[0]
+
+    # Results match the pre-defined question
+    assert res["questions"] == ["What is the total sales?"]
+    assert len(res["analysis_results"]) == 1
+    assert res["analysis_results"][0]["question"] == "What is the total sales?"
+    assert res["analysis_results"][0]["result"] == 600
+    assert res["analysis_results"][0]["status"] == "ok"
+

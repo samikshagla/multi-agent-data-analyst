@@ -269,7 +269,16 @@ Use only pd and np, no imports, no file access. Return ONLY the code, no explana
         # --------------------------------------------------------------------
         # First Run Mode (review_feedback is empty)
         # --------------------------------------------------------------------
-        questions_prompt = f"""You are a senior data analyst.
+        if existing_questions:
+            questions = list(existing_questions)
+            events.append({
+                "agent": "analyst",
+                "type": "info",
+                "message": f"Using {len(questions)} pre-defined analytical business question(s).",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        else:
+            questions_prompt = f"""You are a senior data analyst.
 Analyze this dataset profile and propose 3-5 insightful business questions that can be answered from this data.
 
 {profile_text_block}
@@ -277,38 +286,38 @@ Analyze this dataset profile and propose 3-5 insightful business questions that 
 Return ONLY a JSON list of questions (strings). Questions must be answerable using the columns given. Mix types: totals, comparisons across groups, trends over time (only if a date column exists), top/bottom N. Each question must have ONE single answer that fits in ONE table. Do not ask compound questions with 'and which...' or 'and how...'.
 Do not return code or explanations."""
 
-        # Generate questions with retry if JSON parsing fails
-        questions_reply = call_llm(questions_prompt)
-        questions = _parse_questions_json(questions_reply)
+            # Generate questions with retry if JSON parsing fails
+            questions_reply = call_llm(questions_prompt)
+            questions = _parse_questions_json(questions_reply)
 
-        if not questions:
-            # Retry once
+            if not questions:
+                # Retry once
+                events.append({
+                    "agent": "analyst",
+                    "type": "warning",
+                    "message": "First questions generation reply was not valid JSON. Retrying...",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                retry_reply = call_llm(questions_prompt + "\n\nCRITICAL: Return ONLY a valid JSON list of strings like [\"Question 1?\", \"Question 2?\", \"Question 3?\"].")
+                questions = _parse_questions_json(retry_reply)
+
+            if not questions:
+                # Fall back to default questions derived from column dtypes
+                fallback_msg = "Questions JSON parsing failed after retry. Using default questions."
+                events.append({
+                    "agent": "analyst",
+                    "type": "warning",
+                    "message": fallback_msg,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                questions = _generate_default_questions(df)
+
             events.append({
                 "agent": "analyst",
-                "type": "warning",
-                "message": "First questions generation reply was not valid JSON. Retrying...",
+                "type": "info",
+                "message": f"Generated {len(questions)} analytical business questions.",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            retry_reply = call_llm(questions_prompt + "\n\nCRITICAL: Return ONLY a valid JSON list of strings like [\"Question 1?\", \"Question 2?\", \"Question 3?\"].")
-            questions = _parse_questions_json(retry_reply)
-
-        if not questions:
-            # Fall back to default questions derived from column dtypes
-            fallback_msg = "Questions JSON parsing failed after retry. Using default questions."
-            events.append({
-                "agent": "analyst",
-                "type": "warning",
-                "message": fallback_msg,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            questions = _generate_default_questions(df)
-
-        events.append({
-            "agent": "analyst",
-            "type": "info",
-            "message": f"Generated {len(questions)} analytical business questions.",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
 
         # Answer each question via pandas code and execute in sandbox
         analysis_results: list[dict[str, Any]] = []

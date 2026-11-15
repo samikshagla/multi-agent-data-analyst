@@ -4,6 +4,7 @@ Provides a unified interface to call LLMs (Groq, Gemini) and track usage stats
 (calls, prompt/response characters, tokens).
 """
 
+import copy
 import os
 import time
 from typing import Any
@@ -13,13 +14,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Module-level usage counters
-_usage_stats: dict[str, int] = {
+_usage_stats: dict[str, Any] = {
     "calls": 0,
     "prompt_chars": 0,
     "response_chars": 0,
     "input_tokens": 0,
     "output_tokens": 0,
     "total_tokens": 0,
+    "by_model": {},
 }
 
 
@@ -81,12 +83,25 @@ def reset_usage_stats() -> None:
         "input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
+        "by_model": {},
     }
 
 
-def get_usage_stats() -> dict[str, int]:
-    """Returns a copy of the current LLM usage statistics."""
-    return dict(_usage_stats)
+def get_usage_stats() -> dict[str, Any]:
+    """Returns a deep copy of the current LLM usage statistics."""
+    return copy.deepcopy(_usage_stats)
+
+
+def _get_model_name(provider: str) -> str:
+    """
+    Returns the configured model name for the specified provider.
+    Groq defaults to 'openai/gpt-oss-120b', Gemini defaults to 'gemini-2.0-flash'.
+    """
+    if provider == "groq":
+        return os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    elif provider == "gemini":
+        return os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    return os.getenv("LLM_MODEL", "unknown")
 
 
 def _get_provider() -> str:
@@ -122,7 +137,7 @@ def _call_groq(prompt: str) -> tuple[str, int, int]:
             "Please add your valid Groq API key."
         )
 
-    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    model_name = _get_model_name("groq")
     client = Groq(api_key=api_key.strip())
 
     chat_completion = client.chat.completions.create(
@@ -156,7 +171,7 @@ def _call_gemini(prompt: str) -> tuple[str, int, int]:
             "Please add your valid Gemini API key."
         )
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model_name = _get_model_name("gemini")
 
     llm = ChatGoogleGenerativeAI(
         model=model_name,
@@ -235,6 +250,24 @@ def call_llm(prompt: str) -> str:
             _usage_stats["input_tokens"] += in_toks
             _usage_stats["output_tokens"] += out_toks
             _usage_stats["total_tokens"] = _usage_stats["input_tokens"] + _usage_stats["output_tokens"]
+
+            # Per-model usage tracking
+            model_name = _get_model_name(provider)
+            by_model = _usage_stats.setdefault("by_model", {})
+            if model_name not in by_model:
+                by_model[model_name] = {
+                    "provider": provider,
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "tokens": 0,
+                    "total_tokens": 0,
+                }
+            by_model[model_name]["calls"] += 1
+            by_model[model_name]["input_tokens"] += in_toks
+            by_model[model_name]["output_tokens"] += out_toks
+            by_model[model_name]["tokens"] += (in_toks + out_toks)
+            by_model[model_name]["total_tokens"] += (in_toks + out_toks)
 
             return final_text
 
