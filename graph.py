@@ -18,7 +18,7 @@ from agents.cleaner import cleaner_node
 from agents.analyst import analyst_node
 from agents.visualizer import visualizer_node
 from agents.reviewer import reviewer_node
-from llm import call_llm, reset_usage_stats, get_usage_stats
+from llm import call_llm, reset_usage_stats, get_usage_stats, LLMUnavailableError, LLMConfigError
 from state import AgentState, new_state
 
 
@@ -108,6 +108,60 @@ def report_node(state: AgentState) -> dict[str, Any]:
         item.get("id") for item in analysis_results if item.get("status") != "ok"
     }
 
+    # Check if there are zero successful analysis items
+    ok_results = [item for item in analysis_results if item.get("status") == "ok"]
+    if not ok_results:
+        # Zero successful analysis queries: skip LLM and build fallback failure report
+        failure_reasons = []
+        for ev in events:
+            if ev.get("type") in ("error", "warning") and ev.get("message"):
+                failure_reasons.append(ev.get("message"))
+        if not failure_reasons:
+            failure_reasons.append("All proposed analytical questions failed code generation or sandbox execution.")
+
+        md_lines = [
+            f"# Multi-Agent Data Analysis Report: {dataset_name.replace('_', ' ').title()}",
+            f"\n**Dataset**: `{dataset_name}`  ",
+            f"**Generated**: {date_str}  ",
+            f"**Pipeline**: Multi-Agent LangGraph System (Cleaner -> Analyst -> Report)  ",
+            "\n---\n",
+            "## No analysis could be completed\n",
+            "None of the analytical queries could be successfully calculated on this dataset.\n",
+            "### Failure Details:\n",
+        ]
+        for r in failure_reasons:
+            md_lines.append(f"- {r}")
+
+        if analysis_results:
+            md_lines.append("\n### Attempted Queries:\n")
+            for item in analysis_results:
+                md_lines.append(f"- **{item.get('question')}**: Failed ({item.get('error') or 'Execution failed'})")
+
+        md_lines.append("\n---\n")
+        if cleaning_log:
+            md_lines.append("## Data Cleaning Summary\n")
+            for log_entry in cleaning_log:
+                md_lines.append(f"- {log_entry}")
+            md_lines.append("\n---\n")
+
+        full_report = "\n".join(md_lines)
+        os.makedirs("outputs", exist_ok=True)
+        report_path = os.path.normpath(os.path.join("outputs", f"report_{dataset_name}.md"))
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(full_report)
+
+        events.append({
+            "agent": "report",
+            "type": "warning",
+            "message": f"Generated fallback report (no analysis completed) saved to {report_path}.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        return {
+            "final_report": full_report,
+            "events": events,
+        }
+
     # 1. Key Insights generation (strictly verified items only)
     verified_results = [
         item for item in analysis_results
@@ -141,6 +195,8 @@ Return ONLY a bulleted list of 3-5 lines starting with '- '."""
             lines = [l.strip() for l in llm_reply.strip().split("\n") if l.strip().startswith(("-", "*", "•"))]
             if lines:
                 key_insights = [re.sub(r"^[-*•]\s*", "", l) for l in lines[:5]]
+        except (LLMUnavailableError, LLMConfigError):
+            raise
         except Exception:
             pass
 
@@ -328,10 +384,26 @@ def build_graph(nodes: dict[str, Callable] | None = None, max_retries: int = 3) 
     workflow.add_node("prepare_retry", prepare_retry_node)
     workflow.add_node("report", node_map["report"])
 
-    # Define linear sequential edges
+    # Define edges
     workflow.add_edge(START, "cleaner")
     workflow.add_edge("cleaner", "analyst")
-    workflow.add_edge("analyst", "visualizer")
+
+    # Routing conditional edge after analyst: if zero items succeeded, skip straight to report
+    def analyst_routing(state: AgentState) -> str:
+        results = state.get("analysis_results", [])
+        ok_count = sum(1 for r in results if r.get("status") == "ok")
+        if ok_count == 0:
+            return "report"
+        return "visualizer"
+
+    workflow.add_conditional_edges(
+        "analyst",
+        analyst_routing,
+        {
+            "visualizer": "visualizer",
+            "report": "report",
+        },
+    )
     workflow.add_edge("visualizer", "reviewer")
 
     # Routing conditional edge after reviewer
@@ -446,5 +518,6 @@ def run_pipeline(
         final_stats = _compute_run_stats(accumulated_state, elapsed, usage)
         accumulated_state["run_stats"] = final_stats
         yield "complete", {"run_stats": final_stats}
+        yield "__final__", accumulated_state
 
     return _stream_generator()

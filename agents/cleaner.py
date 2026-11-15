@@ -13,7 +13,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from llm import call_llm
+from llm import call_llm, LLMUnavailableError, LLMConfigError
 from state import AgentState
 from tools.profiler import profile_dataframe, profile_to_text
 
@@ -478,6 +478,8 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
             "events": events,
         }
 
+    except (LLMUnavailableError, LLMConfigError):
+        raise
     except Exception as e:
         # Graceful failure wrapper: log error, save raw data as clean file, and continue
         err_msg = f"Cleaner agent encountered an unexpected error: {e}"

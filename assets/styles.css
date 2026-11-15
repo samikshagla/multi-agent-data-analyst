@@ -224,6 +224,258 @@ div[data-testid="stMetric"] [data-testid="stMetricLabel"] p {
     line-height: 1.4;
 }
 
+/* ==========================================================================
+   Agent Cards & Status Badges
+   ========================================================================== */
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.6);
+    }
+    70% {
+        box-shadow: 0 0 0 8px rgba(20, 184, 166, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(20, 184, 166, 0);
+    }
+}
+
+.agent-card {
+    background-color: #1E293B;
+    border-radius: 12px;
+    padding: 1.15rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease-in-out;
+}
+
+.agent-card:hover {
+    transform: translateY(-2px);
+}
+
+.agent-card.status-running {
+    border-color: #14B8A6;
+    background-color: #152438;
+    box-shadow: 0 0 16px rgba(20, 184, 166, 0.25);
+}
+
+.agent-card.status-done {
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+.agent-card.status-flagged {
+    border-color: rgba(245, 158, 11, 0.5);
+    background-color: #272016;
+}
+
+.agent-card.status-error {
+    border-color: rgba(239, 68, 68, 0.5);
+    background-color: #261619;
+}
+
+.agent-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.agent-card-emoji {
+    font-size: 1.6rem;
+}
+
+.agent-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.55rem;
+    border-radius: 12px;
+}
+
+.badge-waiting {
+    background: #334155;
+    color: #94A3B8;
+}
+
+.badge-running {
+    background: #0F766E;
+    color: #5EEAD4;
+    border: 1px solid #14B8A6;
+    animation: pulse 1.8s infinite;
+}
+
+.badge-done {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34D399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.badge-flagged {
+    background: rgba(245, 158, 11, 0.2);
+    color: #FBBF24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-error {
+    background: rgba(239, 68, 68, 0.2);
+    color: #F87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.agent-card-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #F8FAFC;
+    margin-bottom: 0.25rem;
+}
+
+.agent-card-role {
+    font-size: 0.78rem;
+    color: #94A3B8;
+    line-height: 1.35;
+    margin-bottom: 0.6rem;
+    flex-grow: 1;
+}
+
+.agent-card-note {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #CBD5E1;
+    min-height: 1.1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ==========================================================================
+   Activity Timeline Feed
+   ========================================================================== */
+
+.activity-feed-container {
+    background-color: #0F172A;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1rem 1.2rem;
+    height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+    margin-bottom: 1.2rem;
+}
+
+.feed-empty-message {
+    margin: auto;
+    color: #64748B;
+    font-style: italic;
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.event-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-size: 0.86rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 6px;
+    line-height: 1.4;
+    transition: background 0.1s ease;
+}
+
+.event-time {
+    color: #64748B;
+    font-family: monospace;
+    font-size: 0.78rem;
+    min-width: 65px;
+}
+
+.event-icon {
+    font-size: 0.95rem;
+}
+
+.event-msg {
+    flex-grow: 1;
+    word-break: break-word;
+}
+
+.event-info {
+    color: #E2E8F0;
+    border-left: 2px solid #14B8A6;
+    background: rgba(20, 184, 166, 0.05);
+}
+
+.event-warning {
+    color: #FDE68A;
+    border-left: 2px solid #F59E0B;
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.event-error {
+    color: #FECACA;
+    border-left: 2px solid #EF4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.event-retry {
+    color: #BFDBFE;
+    border-left: 3px solid #3B82F6;
+    background: rgba(59, 130, 246, 0.15);
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Run Complete Card & Summary
+   ========================================================================== */
+
+.run-complete-card {
+    background-color: #1E293B;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.run-complete-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.2rem;
+}
+
+.run-complete-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #F8FAFC;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.report-path-box {
+    margin-top: 1rem;
+    padding: 0.65rem 0.9rem;
+    background-color: #0F172A;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 0.88rem;
+    color: #94A3B8;
+}
+
+.report-path-box code {
+    color: #14B8A6;
+    font-weight: 600;
+}
+
 /* 9. Application Footer */
 .app-footer {
     text-align: center;

@@ -12,7 +12,7 @@ import re
 from typing import Any, Callable
 import pandas as pd
 
-from llm import call_llm
+from llm import call_llm, LLMUnavailableError, LLMConfigError
 from state import AgentState
 from tools.profiler import profile_dataframe, profile_to_text
 from tools.sandbox import run_code
@@ -360,6 +360,8 @@ Use only pd and np, no imports, no file access. Return ONLY the code, no explana
             "events": events,
         }
 
+    except (LLMUnavailableError, LLMConfigError):
+        raise
     except Exception as e:
         err_msg = f"Analyst agent encountered an unexpected error: {e}"
         events.append({

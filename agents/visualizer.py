@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-from llm import call_llm
+from llm import call_llm, LLMUnavailableError, LLMConfigError
 from state import AgentState
 
 # Visualization design constants
@@ -522,6 +522,8 @@ Return ONLY the one-sentence takeaway string."""
                         cleaned_new_takeaway = _clean_code_fence(new_takeaway).strip().strip('"').strip("'")
                         if cleaned_new_takeaway:
                             validated_spec["takeaway"] = cleaned_new_takeaway
+                    except (LLMUnavailableError, LLMConfigError):
+                        raise
                     except Exception:
                         pass
 
@@ -550,6 +552,8 @@ Return ONLY the one-sentence takeaway string."""
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
+        except (LLMUnavailableError, LLMConfigError):
+            raise
         except Exception as e:
             # Failure isolation: log error and mark item skipped without failing node
             err_msg = f"Unexpected visualization failure on item {item_id}: {e}"

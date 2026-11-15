@@ -23,6 +23,8 @@ if hasattr(sys.stderr, "reconfigure"):
         pass
 
 from graph import run_pipeline
+from llm import LLMUnavailableError, LLMConfigError
+from components.ui_state import format_local_timestamp
 
 
 def main() -> None:
@@ -58,7 +60,7 @@ def main() -> None:
                 events = state_update["events"]
                 new_events = events[seen_events_count:]
                 for event in new_events:
-                    ts = event.get("timestamp", "").split("T")[-1][:8]  # HH:MM:SS
+                    ts = format_local_timestamp(event.get("timestamp", ""))
                     agent = event.get("agent", "system").upper()
                     etype = event.get("type", "info").upper()
                     msg = event.get("message", "")
@@ -86,6 +88,9 @@ def main() -> None:
             print(f"  Saved Report:             {report_file_path}")
         print("=" * 70 + "\n")
 
+    except (LLMUnavailableError, LLMConfigError) as e:
+        print(f"\n[AI SERVICE ERROR] {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Pipeline execution halted: {e}")
         sys.exit(1)

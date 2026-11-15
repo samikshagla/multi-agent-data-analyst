@@ -1,8 +1,8 @@
 """
 app.py
-Multi-Agent Data Analyst — Streamlit Web Interface (UI Frame).
-Provides file upload handling, sample data loading, dataset snapshot preview,
-and workflow initiation interface without invoking the agent pipeline.
+Multi-Agent Data Analyst — Streamlit Web Interface.
+Connects the Streamlit UI to the multi-agent pipeline with live agent cards,
+activity timeline feed, progress tracking, and execution summary metrics.
 """
 
 import os
@@ -11,6 +11,21 @@ import streamlit as st
 import pandas as pd
 
 from components.data_utils import load_csv_safe, dataset_snapshot, save_upload
+from components.ui_state import (
+    AGENTS,
+    initial_statuses,
+    apply_node_update,
+    new_events,
+    event_to_html,
+    summarize_run,
+    get_final_status_message,
+    get_final_agent_statuses,
+    format_error_details,
+)
+from components.agent_cards import render_agent_cards
+from components.activity_feed import render_feed
+from graph import run_pipeline
+from llm import check_llm_available, LLMUnavailableError, LLMConfigError
 
 # ============================================================================
 # 1. Page Configuration & Custom CSS Injection
@@ -23,7 +38,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Load external CSS styles
+# Load custom CSS
 css_file = Path("assets/styles.css")
 if css_file.exists():
     css_content = css_file.read_text(encoding="utf-8")
@@ -49,11 +64,32 @@ if "df_preview" not in st.session_state:
 if "error_message" not in st.session_state:
     st.session_state.error_message = None
 
-if "run_requested" not in st.session_state:
-    st.session_state.run_requested = False
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+if "final_state" not in st.session_state:
+    st.session_state.final_state = None
+
+if "statuses" not in st.session_state:
+    st.session_state.statuses = initial_statuses()
+
+if "events_html" not in st.session_state:
+    st.session_state.events_html = []
+
+if "seen_events_count" not in st.session_state:
+    st.session_state.seen_events_count = 0
 
 if "_last_processed_upload" not in st.session_state:
     st.session_state._last_processed_upload = None
+
+
+def clear_analysis_state() -> None:
+    """Resets execution state when a new dataset is loaded."""
+    st.session_state.final_state = None
+    st.session_state.statuses = initial_statuses()
+    st.session_state.events_html = []
+    st.session_state.seen_events_count = 0
+    st.session_state.running = False
 
 
 # ============================================================================
@@ -63,10 +99,14 @@ if "_last_processed_upload" not in st.session_state:
 with st.sidebar:
     st.header("📂 Data Source")
 
+    # Disable controls while pipeline is actively running
+    is_busy = st.session_state.running
+
     # CSV File Uploader
     uploaded_file = st.file_uploader(
         "Upload a CSV dataset",
         type=["csv"],
+        disabled=is_busy,
         help="Upload a tabular CSV file up to 20MB.",
     )
 
@@ -80,7 +120,7 @@ with st.sidebar:
                 st.session_state.dataset_name = None
                 st.session_state.dataset_snapshot = None
                 st.session_state.df_preview = None
-                st.session_state.run_requested = False
+                clear_analysis_state()
             else:
                 saved_path = save_upload(uploaded_file)
                 st.session_state.dataset_path = str(saved_path)
@@ -88,12 +128,12 @@ with st.sidebar:
                 st.session_state.dataset_snapshot = dataset_snapshot(df)
                 st.session_state.df_preview = df.head(5)
                 st.session_state.error_message = None
-                st.session_state.run_requested = False
+                clear_analysis_state()
             st.session_state._last_processed_upload = upload_identifier
             st.rerun()
 
     # "Try with sample data" button
-    if st.button("📊 Try with sample data", use_container_width=True):
+    if st.button("📊 Try with sample data", disabled=is_busy, use_container_width=True):
         sample_path = os.path.join("data", "sample.csv")
         if not os.path.exists(sample_path):
             st.error("Sample dataset 'data/sample.csv' is missing from the workspace.")
@@ -107,7 +147,7 @@ with st.sidebar:
                 st.session_state.dataset_snapshot = dataset_snapshot(df)
                 st.session_state.df_preview = df.head(5)
                 st.session_state.error_message = None
-                st.session_state.run_requested = False
+                clear_analysis_state()
                 st.session_state._last_processed_upload = None
                 st.rerun()
 
@@ -141,7 +181,7 @@ st.markdown(
 
 
 # ============================================================================
-# 5. Error Banner (when validation fails)
+# 5. Error Banner (when file validation fails)
 # ============================================================================
 
 if st.session_state.error_message:
@@ -160,7 +200,10 @@ is_dataset_loaded = (
 if is_dataset_loaded:
     snap = st.session_state.dataset_snapshot
 
-    st.markdown(f"### 📋 Dataset Snapshot &bull; <small style='color:#94A3B8;'>{st.session_state.dataset_name}</small>", unsafe_allow_html=True)
+    st.markdown(
+        f"### 📋 Dataset Snapshot &bull; <small style='color:#94A3B8;'>{st.session_state.dataset_name}</small>",
+        unsafe_allow_html=True,
+    )
 
     # 4 Metric Tiles: Rows, Columns, Missing %, Duplicate rows
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
@@ -173,7 +216,7 @@ if is_dataset_loaded:
     with m_col4:
         st.metric(label="Duplicate Rows", value=f"{snap['duplicate_rows']:,}")
 
-    # Small line listing counts of numeric, text, and date-like columns
+    # Column types breakdown
     st.markdown(
         f"""
 <div class="col-breakdown">
@@ -191,7 +234,7 @@ if is_dataset_loaded:
             st.dataframe(st.session_state.df_preview, use_container_width=True)
 
 else:
-    # Empty state when no valid dataset is selected yet
+    # Empty state when no dataset is loaded yet
     st.markdown(
         """
 <div class="empty-state-card">
@@ -222,26 +265,204 @@ else:
 
 
 # ============================================================================
-# 7. Prominent "Run Analysis" Button
+# 7. Pipeline Execution Interface & Live Agent Display
 # ============================================================================
 
-st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+if is_dataset_loaded:
+    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
 
-btn_col, _ = st.columns([1.5, 3.5])
-with btn_col:
-    run_clicked = st.button(
-        "🚀 Run Analysis",
-        type="primary",
-        disabled=not is_dataset_loaded,
-        use_container_width=True,
-        help="Initiates the multi-agent pipeline on the loaded dataset.",
-    )
+    # Run Analysis Button
+    run_btn_col, _ = st.columns([1.5, 3.5])
+    with run_btn_col:
+        run_clicked = st.button(
+            "🚀 Run Analysis",
+            type="primary",
+            disabled=(not is_dataset_loaded) or st.session_state.running,
+            use_container_width=True,
+            help="Initiates the multi-agent pipeline on the loaded dataset.",
+        )
 
-if run_clicked:
-    st.session_state.run_requested = True
+    # Placeholders for live updates
+    warning_placeholder = st.empty()
+    cards_placeholder = st.empty()
+    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+    feed_placeholder = st.empty()
+    summary_placeholder = st.empty()
 
-if st.session_state.run_requested:
-    st.info("Pipeline connection comes in the next step", icon="ℹ️")
+    if run_clicked:
+        with st.spinner("Checking AI service..."):
+            is_available, check_msg = check_llm_available()
+
+        if not is_available:
+            friendly_err, tech_err = format_error_details(check_msg)
+            with warning_placeholder.container():
+                st.error(friendly_err)
+                with st.expander("Technical details"):
+                    st.code(tech_err)
+        else:
+            warning_placeholder.empty()
+            st.session_state.running = True
+            st.session_state.final_state = None
+            st.session_state.statuses = initial_statuses()
+            st.session_state.events_html = []
+            st.session_state.seen_events_count = 0
+            st.rerun()
+
+    # Active Execution Loop
+    if st.session_state.running:
+        warning_placeholder.warning(
+            "⏳ Analysis takes about 2 minutes. Please don't change anything until it finishes."
+        )
+
+        # Mark cleaner running initially
+        st.session_state.statuses["cleaner"] = {"status": "running", "note": "Cleaning data..."}
+        render_agent_cards(cards_placeholder, st.session_state.statuses)
+        render_feed(feed_placeholder, st.session_state.events_html)
+
+        final_state_obj = None
+        try:
+            current_retry = 0
+
+            for node_name, state_update in run_pipeline(st.session_state.dataset_path, stream=True):
+                # Check for final state completion event
+                if node_name == "__final__":
+                    final_state_obj = state_update
+                    continue
+
+                if "retry_count" in state_update:
+                    current_retry = state_update["retry_count"]
+
+                # 1. Update statuses
+                st.session_state.statuses = apply_node_update(
+                    st.session_state.statuses,
+                    node_name,
+                    state_update,
+                    retry_count=current_retry,
+                )
+
+                # 2. Extract new timeline events
+                if "events" in state_update and isinstance(state_update["events"], list):
+                    new_evs = new_events(state_update["events"], st.session_state.seen_events_count)
+                    for ev in new_evs:
+                        st.session_state.events_html.append(event_to_html(ev))
+                    st.session_state.seen_events_count = len(state_update["events"])
+
+                # 3. Redraw live components
+                render_agent_cards(cards_placeholder, st.session_state.statuses)
+                render_feed(feed_placeholder, st.session_state.events_html)
+
+            # Store final state
+            if final_state_obj:
+                st.session_state.final_state = final_state_obj
+                st.session_state.statuses = get_final_agent_statuses(
+                    final_state_obj,
+                    st.session_state.statuses,
+                )
+                render_agent_cards(cards_placeholder, st.session_state.statuses, final_state=final_state_obj)
+
+        except LLMUnavailableError as ex:
+            warning_placeholder.empty()
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "error"
+                    v["note"] = "AI service unreachable"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+            render_feed(feed_placeholder, st.session_state.events_html)
+            friendly_err, tech_err = format_error_details(ex)
+            st.error(friendly_err)
+            with st.expander("Technical details"):
+                st.code(tech_err)
+        except LLMConfigError as ex:
+            warning_placeholder.empty()
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "error"
+                    v["note"] = "Config error"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+            render_feed(feed_placeholder, st.session_state.events_html)
+            friendly_err, tech_err = format_error_details(ex)
+            st.error(friendly_err)
+            with st.expander("Technical details"):
+                st.code(tech_err)
+        except Exception as ex:
+            warning_placeholder.empty()
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "error"
+                    v["note"] = "Failed"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+            render_feed(feed_placeholder, st.session_state.events_html)
+            friendly_err, tech_err = format_error_details(ex)
+            st.error(friendly_err)
+            with st.expander("Technical details"):
+                st.code(tech_err)
+        finally:
+            st.session_state.running = False
+            if final_state_obj:
+                st.rerun()
+
+    else:
+        # Not currently running: display either finished run or initial idle cards & feed
+        render_agent_cards(
+            cards_placeholder,
+            st.session_state.statuses,
+            final_state=st.session_state.final_state,
+        )
+        render_feed(feed_placeholder, st.session_state.events_html)
+
+        # Show "Run complete" summary card if finished
+        if st.session_state.final_state:
+            summary = summarize_run(st.session_state.final_state)
+            is_all_clean, status_title = get_final_status_message(
+                st.session_state.final_state,
+                st.session_state.statuses,
+            )
+            title_icon = "✅" if is_all_clean else "⚠️"
+
+            with summary_placeholder.container():
+                st.markdown(
+                    f"""
+<div class="run-complete-card">
+    <div class="run-complete-header">
+        <div class="run-complete-title">{title_icon} {status_title}</div>
+    </div>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
+
+                # Row 1: Execution metrics
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.metric("Execution Time", f"{summary['duration_sec']:.1f}s")
+                with c2:
+                    st.metric("LLM Invocations", f"{summary['llm_calls']}")
+                with c3:
+                    st.metric("Tokens Consumed", f"{summary['tokens']:,}")
+                with c4:
+                    st.metric("Review Retries", f"{summary['retries_used']}")
+
+                # Row 2: Verification audit metrics
+                c5, c6, c7, c8 = st.columns(4)
+                with c5:
+                    st.metric("Flagged (Pass 1)", f"{summary['items_flagged_first_pass']}")
+                with c6:
+                    st.metric("Fixed by Retry", f"{summary['fixed_by_retry']}")
+                with c7:
+                    st.metric("Unresolved Items", f"{summary['unresolved']}")
+                with c8:
+                    if summary["report_path"]:
+                        st.metric("Saved Report", os.path.basename(summary["report_path"]))
+                    else:
+                        st.metric("Report Status", "Generated")
+
+                if summary["report_path"]:
+                    st.markdown(
+                        f'<div class="report-path-box">Full Markdown report available at: <code>{summary["report_path"]}</code></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                st.info("Results tabs come in the next step", icon="ℹ️")
 
 
 # ============================================================================

@@ -23,6 +23,54 @@ _usage_stats: dict[str, int] = {
 }
 
 
+# ============================================================================
+# Custom Exceptions
+# ============================================================================
+
+class LLMUnavailableError(Exception):
+    """Raised when the AI service is unreachable, timed out, or returning 503/429 after retries."""
+    pass
+
+
+class LLMConfigError(Exception):
+    """Raised when LLM configuration is invalid: bad API key, missing key, 401/403/404, model not found."""
+    pass
+
+
+def _is_config_error(exc: Exception) -> bool:
+    """
+    Determines if an exception is an unrecoverable configuration/authentication issue
+    (which should never be retried) rather than a transient availability failure.
+    """
+    if isinstance(exc, LLMConfigError):
+        return True
+
+    exc_str = str(exc).lower()
+    exc_type = type(exc).__name__.lower()
+
+    config_indicators = (
+        "auth",
+        "api_key",
+        "apikey",
+        "invalid_api_key",
+        "unauthorized",
+        "401",
+        "permission",
+        "forbidden",
+        "403",
+        "not_found",
+        "not found",
+        "model_not_found",
+        "does not exist",
+        "404",
+    )
+
+    if any(ind in exc_type for ind in ("auth", "permission", "notfound")):
+        return True
+
+    return any(ind in exc_str for ind in config_indicators)
+
+
 def reset_usage_stats() -> None:
     """Resets the LLM usage statistics counters to zero."""
     global _usage_stats
@@ -151,6 +199,10 @@ def call_llm(prompt: str) -> str:
     """
     Calls the active LLM provider (Groq or Gemini) with automatic retry and usage tracking.
 
+    Retries on transient network/service errors (connection errors, timeouts, 503, 429) up to 4 attempts.
+    Raises LLMConfigError immediately without retrying on configuration or authentication errors.
+    Raises LLMUnavailableError after retries are exhausted.
+
     Args:
         prompt (str): The prompt string.
 
@@ -158,7 +210,7 @@ def call_llm(prompt: str) -> str:
         str: Clean response text.
     """
     provider = _get_provider()
-    max_retries = int(os.getenv("MAX_RETRIES", "3"))
+    max_retries = 4
 
     last_exception = None
     for attempt in range(max_retries):
@@ -168,7 +220,7 @@ def call_llm(prompt: str) -> str:
             elif provider == "gemini":
                 final_text, in_toks, out_toks = _call_gemini(prompt)
             else:
-                raise ValueError(f"Unsupported LLM_PROVIDER: '{provider}'. Use 'groq' or 'gemini'.")
+                raise LLMConfigError(f"Unsupported LLM_PROVIDER: '{provider}'. Use 'groq' or 'gemini'.")
 
             # Fallback estimation if provider did not return token counts
             if in_toks <= 0:
@@ -187,13 +239,49 @@ def call_llm(prompt: str) -> str:
             return final_text
 
         except Exception as e:
+            if _is_config_error(e):
+                raise LLMConfigError(f"LLM configuration error: {e}") from e
+
             last_exception = e
             print(f"[{provider}] Attempt {attempt + 1}/{max_retries} failed: {e}")
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
             else:
                 print(f"Error during {provider} LLM call after {max_retries} attempts: {e}")
-                raise last_exception
+                raise LLMUnavailableError(
+                    f"AI service unreachable after {max_retries} attempts: {last_exception}"
+                ) from last_exception
+
+    raise LLMUnavailableError(f"AI service unreachable: {last_exception}")
+
+
+def check_llm_available() -> tuple[bool, str]:
+    """
+    Performs a lightweight probe call to verify AI service connectivity and credentials.
+    Makes a single attempt without updating usage statistics.
+
+    Returns:
+        tuple[bool, str]: (True, "") on success, or (False, friendly_message) on failure.
+    """
+    provider = _get_provider()
+    probe_prompt = "Reply with OK"
+
+    try:
+        if provider == "groq":
+            text, _, _ = _call_groq(probe_prompt)
+        elif provider == "gemini":
+            text, _, _ = _call_gemini(probe_prompt)
+        else:
+            return False, f"Unsupported LLM_PROVIDER: '{provider}'. Check your .env file."
+
+        if not text:
+            return False, "AI service returned an empty response."
+        return True, ""
+
+    except Exception as e:
+        if _is_config_error(e):
+            return False, f"AI service configuration problem (API key or model name): {e}"
+        return False, f"Can't reach the AI service. Check your internet connection ({e})."
 
 
 if __name__ == "__main__":

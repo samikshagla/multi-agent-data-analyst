@@ -188,7 +188,7 @@ def test_graph_never_runs_forever():
 
     fake_nodes = {
         "cleaner": lambda s: {"clean_df_path": s.get("raw_df_path", "")},
-        "analyst": lambda s: {"questions": ["Q1"], "analysis_results": []},
+        "analyst": lambda s: {"questions": ["Q1"], "analysis_results": [{"id": 0, "status": "ok"}]},
         "visualizer": lambda s: {"charts": []},
         "reviewer": fake_reviewer,
         "report": lambda s: {"final_report": "Finished"},

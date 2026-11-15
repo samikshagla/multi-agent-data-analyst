@@ -15,7 +15,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from llm import call_llm
+from llm import call_llm, LLMUnavailableError, LLMConfigError
 from state import AgentState
 from tools.sandbox import run_code
 
@@ -444,6 +444,8 @@ Return ONLY JSON: {{"issues": [list of short strings, empty if none]}}"""
         data = json.loads(cleaned)
         if isinstance(data, dict) and "issues" in data and isinstance(data["issues"], list):
             return [str(s).strip() for s in data["issues"] if str(s).strip()]
+    except (LLMUnavailableError, LLMConfigError):
+        raise
     except Exception:
         pass
     return []
@@ -660,6 +662,8 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
+        except (LLMUnavailableError, LLMConfigError):
+            raise
         except Exception as item_err:
             # Failure isolation: treat item as unverified with reason
             warn_msg = f"reviewer could not verify this item: {item_err}"
@@ -675,7 +679,7 @@ def reviewer_node(state: AgentState) -> dict[str, Any]:
             })
             events.append({
                 "agent": "reviewer",
-                "type": "warning",
+                "type": "error",
                 "message": f"Item {item_id} evaluation error: {item_err}. Marked as unverified.",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
