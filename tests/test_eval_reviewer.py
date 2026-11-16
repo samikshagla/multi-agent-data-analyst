@@ -628,3 +628,232 @@ def test_recomputation_accuracy_right_reason_by_luck_and_none_row_gone(tmp_path:
     assert "small sample (n=1), interpret with care" in md_text
     # 'none' should not appear as a row in the magnitude table
     assert "| `none` |" not in md_text
+
+
+# ============================================================================
+# Step 6: Tests for --summarize-only, partial marking, per-repeat CI, flips
+# ============================================================================
+
+def test_summarize_only_partial_marking(tmp_path: Path):
+    """Verifies PARTIAL RUN warning is added at the top when finished cases < expected total."""
+    from eval.run_reviewer_eval import generate_summary, summarize_run
+
+    cases_file = tmp_path / "cases.jsonl"
+    records = [
+        {
+            "case_id": f"q0{i}_correct",
+            "item_id": i,
+            "label": "Correct",
+            "is_wrong": False,
+            "kind": "correct",
+            "verdict": "pass",
+            "seconds": 0.1,
+            "llm_calls": 1,
+            "tokens": 50,
+        }
+        for i in range(5)
+    ]
+    with open(cases_file, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+    # Partial run: 5 finished out of 10 expected
+    summary = summarize_run(tmp_path, limit=10)
+    assert summary["is_partial"] is True
+    assert summary["expected_total_cases"] == 10
+    assert summary["finished_cases"] == 5
+
+    md_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert md_text.startswith("PARTIAL RUN: 5 of 10 cases finished")
+
+    # Full run: 5 finished out of 5 expected
+    summary_full = summarize_run(tmp_path, limit=5)
+    assert summary_full["is_partial"] is False
+    md_text_full = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "PARTIAL RUN" not in md_text_full
+
+
+def test_summarize_only_never_modifies_cases_jsonl(tmp_path: Path):
+    """Verifies that summarize-only operates strictly read-only on cases.jsonl."""
+    from eval.run_reviewer_eval import summarize_run
+
+    cases_file = tmp_path / "cases.jsonl"
+    original_content = (
+        json.dumps({"case_id": "q00_correct", "item_id": 0, "is_wrong": False, "verdict": "pass"})
+        + "\n"
+        + json.dumps({"case_id": "q00_v1", "item_id": 0, "is_wrong": True, "verdict": "fail"})
+        + "\n"
+    )
+    cases_file.write_text(original_content, encoding="utf-8")
+
+    # Execute summarize_run
+    summarize_run(tmp_path, limit=2)
+
+    # Content must remain exactly identical byte-for-byte
+    after_content = cases_file.read_text(encoding="utf-8")
+    assert after_content == original_content
+
+
+def test_per_repeat_counts_and_ci_on_unique_cases(tmp_path: Path):
+    """
+    Verifies that:
+    - Per-repeat counts and Wilson CIs are computed on the cases in that repeat.
+    - Headline detection and false alarm rates are the MEAN of per-repeat rates.
+    - Headline Wilson CIs are computed on the count of UNIQUE cases, NOT pooled repeats.
+    """
+    from eval.metrics import wilson_ci
+    from eval.run_reviewer_eval import generate_summary
+
+    records = []
+    # 10 unique wrong cases (items 1..10) and 5 unique correct cases (items 11..15)
+    # Repeat 1 (r1): 9/10 wrong detected, 0/5 false alarms
+    for i in range(1, 11):
+        v = "fail" if i <= 9 else "pass"
+        records.append({
+            "case_id": f"q{i:02d}_v1_r1",
+            "item_id": i,
+            "repeat_index": 0,
+            "is_wrong": True,
+            "kind": "wrong_aggregation",
+            "verdict": v,
+        })
+    for i in range(11, 16):
+        records.append({
+            "case_id": f"q{i:02d}_correct_r1",
+            "item_id": i,
+            "repeat_index": 0,
+            "is_wrong": False,
+            "kind": "correct",
+            "verdict": "pass",
+        })
+
+    # Repeat 2 (r2): 7/10 wrong detected, 1/5 false alarms
+    for i in range(1, 11):
+        v = "fail" if i <= 7 else "pass"
+        records.append({
+            "case_id": f"q{i:02d}_v1_r2",
+            "item_id": i,
+            "repeat_index": 1,
+            "is_wrong": True,
+            "kind": "wrong_aggregation",
+            "verdict": v,
+        })
+    for i in range(11, 16):
+        v = "fail" if i == 11 else "pass"
+        records.append({
+            "case_id": f"q{i:02d}_correct_r2",
+            "item_id": i,
+            "repeat_index": 1,
+            "is_wrong": False,
+            "kind": "correct",
+            "verdict": v,
+        })
+
+    summary = generate_summary(records, tmp_path, repeats=2, expected_total=30)
+
+    # 1. Per-repeat performance table
+    pr = summary["per_repeat"]
+    assert len(pr) == 2
+
+    # r1: 9/10 detected, 0/5 false alarms
+    assert pr[0]["repeat"] == "r1"
+    assert pr[0]["detection_counts"] == "9/10"
+    assert pr[0]["detection_rate"] == 0.90
+    assert pr[0]["detection_rate_ci"] == wilson_ci(9, 10)
+    assert pr[0]["false_alarm_counts"] == "0/5"
+    assert pr[0]["false_alarm_rate"] == 0.0
+    assert pr[0]["false_alarm_rate_ci"] == wilson_ci(0, 5)
+
+    # r2: 7/10 detected, 1/5 false alarms
+    assert pr[1]["repeat"] == "r2"
+    assert pr[1]["detection_counts"] == "7/10"
+    assert pr[1]["detection_rate"] == 0.70
+    assert pr[1]["detection_rate_ci"] == wilson_ci(7, 10)
+    assert pr[1]["false_alarm_counts"] == "1/5"
+    assert pr[1]["false_alarm_rate"] == 0.20
+    assert pr[1]["false_alarm_rate_ci"] == wilson_ci(1, 5)
+
+    # 2. Overall headline numbers: MEAN of per-repeat rates
+    ov = summary["overall"]
+    assert ov["detection_rate"] == pytest.approx(0.80)  # (0.90 + 0.70) / 2
+    assert ov["false_alarm_rate"] == pytest.approx(0.10)  # (0.0 + 0.20) / 2
+
+    # 3. Overall headline CI: computed on n_unique_cases (10 wrong cases), NOT pooled 20
+    expected_ci_unique = wilson_ci(round(0.80 * 10), 10)  # wilson_ci(8, 10)
+    pooled_ci = wilson_ci(16, 20)  # pooled calculation from old code
+    assert ov["detection_rate_ci"] == list(expected_ci_unique)
+    assert ov["detection_rate_ci"] != list(pooled_ci)
+
+    # Unique CI interval should be strictly wider than pooled CI interval
+    unique_width = expected_ci_unique[1] - expected_ci_unique[0]
+    pooled_width = pooled_ci[1] - pooled_ci[0]
+    assert unique_width > pooled_width
+
+
+def test_verdict_flips_table(tmp_path: Path):
+    """
+    Verifies verdict flips table lists cases whose verdicts differed between repeats,
+    and counts cases with identical verdicts.
+    """
+    from eval.run_reviewer_eval import generate_summary
+
+    records = [
+        # Case A: flips (pass in r1, fail in r2)
+        {"case_id": "q01_v1_r1", "repeat_index": 0, "label": "Case A", "kind": "wrong_agg", "is_wrong": True, "verdict": "pass"},
+        {"case_id": "q01_v1_r2", "repeat_index": 1, "label": "Case A", "kind": "wrong_agg", "is_wrong": True, "verdict": "fail"},
+
+        # Case B: identical verdicts across repeats (fail, fail)
+        {"case_id": "q02_v1_r1", "repeat_index": 0, "label": "Case B", "kind": "wrong_filter", "is_wrong": True, "verdict": "fail"},
+        {"case_id": "q02_v1_r2", "repeat_index": 1, "label": "Case B", "kind": "wrong_filter", "is_wrong": True, "verdict": "fail"},
+
+        # Case C: identical verdicts across repeats (pass, pass)
+        {"case_id": "q03_correct_r1", "repeat_index": 0, "label": "Case C", "kind": "correct", "is_wrong": False, "verdict": "pass"},
+        {"case_id": "q03_correct_r2", "repeat_index": 1, "label": "Case C", "kind": "correct", "is_wrong": False, "verdict": "pass"},
+    ]
+
+    summary = generate_summary(records, tmp_path, repeats=2, expected_total=6)
+    flips_data = summary["verdict_flips"]
+
+    assert flips_data["multi_repeat_cases_count"] == 3
+    assert flips_data["identical_verdicts_count"] == 2
+    assert flips_data["flipped_verdicts_count"] == 1
+    assert len(flips_data["flips"]) == 1
+
+    flip_item = flips_data["flips"][0]
+    assert flip_item["case_id"] == "q01_v1"
+    assert flip_item["verdicts"] == {"r1": "pass", "r2": "fail"}
+
+    # Verify markdown representation
+    md_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "## Verdict Flips Across Repeats" in md_text
+    assert "Cases evaluated in 2 or more repeats**: 3" in md_text
+    assert "Cases with identical verdicts across all repeats**: 2" in md_text
+    assert "Cases with differing verdicts (flips)**: 1" in md_text
+    assert "| `q01_v1` | Case A | `wrong_agg` | pass | fail |" in md_text
+
+
+def test_summarize_only_cli_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verifies python -m eval.run_reviewer_eval --summarize-only --run-dir <dir> CLI works."""
+    import sys
+    from eval.run_reviewer_eval import main
+
+    cases_file = tmp_path / "cases.jsonl"
+    records = [
+        {"case_id": "q00_correct", "item_id": 0, "is_wrong": False, "kind": "correct", "verdict": "pass"},
+        {"case_id": "q00_v1", "item_id": 0, "is_wrong": True, "kind": "wrong_agg", "verdict": "fail"},
+    ]
+    with open(cases_file, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval.run_reviewer_eval", "--summarize-only", "--run-dir", str(tmp_path), "--limit", "2"],
+    )
+
+    main()
+
+    assert (tmp_path / "summary.md").exists()
+    assert (tmp_path / "summary.json").exists()
+
