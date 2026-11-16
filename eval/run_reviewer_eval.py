@@ -22,6 +22,7 @@ import pandas as pd
 
 from agents.reviewer import reviewer_node
 from eval.benchmark import BENCHMARK
+from eval.budget import BudgetExceeded, TokenBudget
 from eval.ground_truth import compute_ground_truth, load_ground_truth, save_ground_truth
 from eval.metrics import breakdown, confusion, magnitude_bucket, wilson_ci
 from eval.scoring import answer_correct
@@ -234,6 +235,7 @@ def run_evaluation(
     repeats: int = 1,
     run_dir: str | None = None,
     csv_path: str = "data/sample.csv",
+    max_tokens: int | None = None,
 ) -> str:
     """
     Executes reviewer evaluation harness. Returns path to run directory.
@@ -246,6 +248,7 @@ def run_evaluation(
     run_path = Path(run_dir)
     run_path.mkdir(parents=True, exist_ok=True)
     cases_file = run_path / "cases.jsonl"
+    budget = TokenBudget(max_tokens=max_tokens)
 
     print("=" * 80)
     print("REVIEWER AGENT EVALUATION RUNNER")
@@ -304,6 +307,14 @@ def run_evaluation(
     # 4. Open cases.jsonl in append mode
     with open(cases_file, "a", encoding="utf-8") as out_f:
         for idx, case in enumerate(cases_to_run):
+            try:
+                budget.check()
+            except BudgetExceeded as be:
+                print(f"\n[TOKEN BUDGET EXCEEDED] Execution paused cleanly: {be}", file=sys.stderr)
+                print(f"Finished {done_so_far + idx} of {total_to_run} cases (used {be.used_tokens:,} tokens, limit {be.max_tokens:,}).", file=sys.stderr)
+                print(f"To resume this evaluation, run:\n  python -m eval.run_reviewer_eval --run-dir {run_dir}", file=sys.stderr)
+                sys.exit(1)
+
             current_num = done_so_far + idx + 1
             case_id = case["case_id"]
             is_wrong = case["is_wrong"]
@@ -825,9 +836,15 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="Limit to first N cases (interleaved correct & wrong)")
     parser.add_argument("--repeats", type=int, default=1, help="Number of times to repeat each case (default 1)")
     parser.add_argument("--run-dir", type=str, default=None, help="Directory to store evaluation artifacts")
+    parser.add_argument("--max-tokens", type=int, default=None, help="Maximum tokens allowed before stopping cleanly")
 
     args = parser.parse_args()
-    run_evaluation(limit=args.limit, repeats=args.repeats, run_dir=args.run_dir)
+    run_evaluation(
+        limit=args.limit,
+        repeats=args.repeats,
+        run_dir=args.run_dir,
+        max_tokens=args.max_tokens,
+    )
 
 
 if __name__ == "__main__":
