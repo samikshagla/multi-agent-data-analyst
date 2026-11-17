@@ -977,3 +977,166 @@ def test_task_serialization_failure_records_error_and_next_runs(tmp_path: Path):
     assert records[1]["item_id"] == 4
     assert records[1]["system_b"]["status"] == "ok"
 
+
+# ============================================================================
+# 13. Tests for Summary Enhancements (by_model coverage, final reviewer verdict, correct but unresolved)
+# ============================================================================
+
+def test_summary_models_used_and_resources_agree_with_explanatory_line(tmp_path: Path):
+    """
+    Verifies that Models Used line aggregates LLM calls and tokens across all systems
+    (A + B + C additional) and matches Resources line, with the explanatory line present:
+    'System C includes System B's first attempt, so B is not counted twice.'
+    """
+    run_dir = tmp_path / "models_used_run"
+    run_dir.mkdir(parents=True)
+
+    records = [
+        {
+            "item_id": 1,
+            "repeat_index": 0,
+            "question": "What is revenue?",
+            "category": "aggregate",
+            "difficulty": "easy",
+            "system_a": {
+                "is_correct": True,
+                "llm_calls": 2,
+                "tokens": 200,
+                "seconds": 1.0,
+                "by_model": {"gpt-4o": {"calls": 2, "tokens": 200}},
+            },
+            "system_b": {
+                "is_correct": True,
+                "llm_calls": 3,
+                "tokens": 300,
+                "seconds": 1.5,
+                "by_model": {"gpt-4o": {"calls": 3, "tokens": 300}},
+            },
+            "system_c": {
+                "is_correct": True,
+                "final_verdict": "pass",
+                "rounds_count": 2,
+                "retries_used": 1,
+                "additional_llm_calls": 5,
+                "additional_tokens": 500,
+                "additional_seconds": 2.5,
+                "by_model": {"gpt-4o": {"calls": 5, "tokens": 500}},
+                "rounds": [{"reviewer_verdict": "fail"}, {"reviewer_verdict": "pass"}],
+            },
+            "paired_bc": "both_correct",
+            "paired_ab": "both_correct",
+        }
+    ]
+
+    generate_summary(records, run_dir, repeats=1, expected_total=1)
+
+    md_content = (run_dir / "summary.md").read_text(encoding="utf-8")
+
+    # System A calls = 2, tokens = 200
+    # System C calls = 3 (from B) + 5 (additional) = 8, tokens = 300 + 500 = 800
+    # Total Resources = A (2 calls, 200 toks) + C (8 calls, 800 toks) = 10 calls, 1,000 tokens
+    assert "**Resources**: 10 LLM calls, 1,000 tokens" in md_content
+    assert "**Models Used**: `gpt-4o` (10 calls, 1,000 tokens)" in md_content
+    assert "System C includes System B's first attempt, so B is not counted twice." in md_content
+
+
+def test_summary_correct_but_unresolved_flag_and_per_item_table(tmp_path: Path):
+    """
+    Verifies that items where the final answer is correct against ground truth,
+    but the reviewer verdict is 'fail' after the retry limit:
+    1. Are counted in summary['reviewer_behavior']['correct_but_unresolved']
+    2. Include the explanatory text in Section 3 of summary.md
+    3. Display 'fail' in 'Final reviewer verdict' and 'YES' in 'Correct but unresolved' columns of Section 5.
+    4. Normal items show '-' in 'Correct but unresolved'.
+    """
+    run_dir = tmp_path / "unresolved_test_run"
+    run_dir.mkdir(parents=True)
+
+    records = [
+        # Item 1: correct but unresolved (final answer correct, final reviewer verdict fail)
+        {
+            "item_id": 1,
+            "repeat_index": 0,
+            "question": "What is revenue?",
+            "category": "aggregate",
+            "difficulty": "easy",
+            "system_a": {"is_correct": True, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_b": {"is_correct": True, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_c": {
+                "is_correct": True,
+                "final_verdict": "fail",
+                "rounds_count": 4,
+                "retries_used": 3,
+                "additional_llm_calls": 6,
+                "additional_tokens": 600,
+                "additional_seconds": 3.0,
+                "rounds": [{"reviewer_verdict": "fail"}] * 4,
+            },
+            "paired_bc": "both_correct",
+            "paired_ab": "both_correct",
+        },
+        # Item 2: correct and passed (normal pass)
+        {
+            "item_id": 2,
+            "repeat_index": 0,
+            "question": "Top category?",
+            "category": "ranking",
+            "difficulty": "medium",
+            "system_a": {"is_correct": True, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_b": {"is_correct": True, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_c": {
+                "is_correct": True,
+                "final_verdict": "pass",
+                "rounds_count": 1,
+                "retries_used": 0,
+                "additional_llm_calls": 1,
+                "additional_tokens": 100,
+                "additional_seconds": 1.0,
+                "rounds": [{"reviewer_verdict": "pass"}],
+            },
+            "paired_bc": "both_correct",
+            "paired_ab": "both_correct",
+        },
+        # Item 3: wrong and failed (normal fail - not correct_but_unresolved)
+        {
+            "item_id": 3,
+            "repeat_index": 0,
+            "question": "Average orders?",
+            "category": "aggregate",
+            "difficulty": "hard",
+            "system_a": {"is_correct": False, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_b": {"is_correct": False, "llm_calls": 1, "tokens": 100, "seconds": 1.0},
+            "system_c": {
+                "is_correct": False,
+                "final_verdict": "fail",
+                "rounds_count": 4,
+                "retries_used": 3,
+                "additional_llm_calls": 6,
+                "additional_tokens": 600,
+                "additional_seconds": 3.0,
+                "rounds": [{"reviewer_verdict": "fail"}] * 4,
+            },
+            "paired_bc": "both_wrong",
+            "paired_ab": "both_wrong",
+        },
+    ]
+
+    summary = generate_summary(records, run_dir, repeats=1, expected_total=3)
+
+    assert summary["reviewer_behavior"]["correct_but_unresolved"] == 1
+    assert len(summary["reviewer_behavior"]["correct_but_unresolved_items"]) == 1
+    assert summary["reviewer_behavior"]["correct_but_unresolved_items"][0]["item_id"] == 1
+
+    md_content = (run_dir / "summary.md").read_text(encoding="utf-8")
+
+    # Section 3 check
+    assert "- **Correct but unresolved items** (final answer right, reviewer verdict 'fail'): **1**" in md_content
+    assert 'Such items would be shown as "Unresolved" in the app even though the answer is right.' in md_content
+
+    # Section 5 table checks
+    assert "| Final reviewer verdict | Correct but unresolved |" in md_content
+    assert "| `1` | aggregate | easy | PASS | PASS | PASS | fail | YES | 4 | both_correct |" in md_content
+    assert "| `2` | ranking | medium | PASS | PASS | PASS | pass | - | 1 | both_correct |" in md_content
+    assert "| `3` | aggregate | hard | FAIL | FAIL | FAIL | fail | - | 4 | both_wrong |" in md_content
+
+

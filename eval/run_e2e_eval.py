@@ -431,6 +431,21 @@ def run_system_c(
     additional_calls = u1_c.get("calls", 0) - u0_c.get("calls", 0)
     additional_tokens = u1_c.get("total_tokens", 0) - u0_c.get("total_tokens", 0)
 
+    # Calculate model delta for System C additional calls
+    by_model_c: dict[str, dict[str, Any]] = {}
+    u0_bm_c = u0_c.get("by_model", {})
+    u1_bm_c = u1_c.get("by_model", {})
+    for m, curr_stat in u1_bm_c.items():
+        prev_stat = u0_bm_c.get(m, {})
+        d_calls = curr_stat.get("calls", 0) - prev_stat.get("calls", 0)
+        d_toks = curr_stat.get("tokens", curr_stat.get("total_tokens", 0)) - prev_stat.get("tokens", prev_stat.get("total_tokens", 0))
+        if d_calls > 0 or d_toks > 0:
+            by_model_c[m] = {
+                "provider": curr_stat.get("provider", ""),
+                "calls": d_calls,
+                "tokens": d_toks,
+            }
+
     # Final outcome
     final_item = state_c["analysis_results"][0]
     final_res = final_item.get("result")
@@ -454,6 +469,7 @@ def run_system_c(
         "additional_llm_calls": additional_calls,
         "additional_tokens": additional_tokens,
         "additional_seconds": round(elapsed_c, 2),
+        "by_model": by_model_c,
     }
 
 
@@ -615,6 +631,8 @@ def generate_summary(
 
     total_retries = 0
     total_rounds = 0
+    correct_but_unresolved_count = 0
+    correct_but_unresolved_items: list[dict[str, Any]] = []
 
     for r in records:
         sc = r.get("system_c", {})
@@ -622,6 +640,16 @@ def generate_summary(
         rounds = sc.get("rounds", [])
         total_retries += sc.get("retries_used", 0)
         total_rounds += sc.get("rounds_count", 1)
+
+        final_verdict = str(sc.get("final_verdict") or sc.get("reviewer_verdict") or "unverified").strip().lower()
+        if sc.get("is_correct") and final_verdict == "fail":
+            correct_but_unresolved_count += 1
+            correct_but_unresolved_items.append({
+                "item_id": r["item_id"],
+                "repeat_index": r.get("repeat_index", 0),
+                "question": r.get("question", ""),
+                "rounds": sc.get("rounds_count", 1),
+            })
 
         first_verdict = rounds[0].get("reviewer_verdict") if rounds else "unverified"
         if first_verdict == "fail":
@@ -696,13 +724,41 @@ def generate_summary(
     # Models used
     aggregated_by_model: dict[str, dict[str, Any]] = {}
     for r in records:
-        for sys_key in ("system_a", "system_b"):
-            bm = r.get(sys_key, {}).get("by_model", {})
-            for m, m_data in bm.items():
+        # System A
+        bm_a = r.get("system_a", {}).get("by_model", {})
+        for m, m_data in bm_a.items():
+            if m not in aggregated_by_model:
+                aggregated_by_model[m] = {"calls": 0, "tokens": 0}
+            aggregated_by_model[m]["calls"] += m_data.get("calls", 0)
+            aggregated_by_model[m]["tokens"] += m_data.get("tokens", m_data.get("total_tokens", 0))
+
+        # System B (which forms the first attempt of System C)
+        bm_b = r.get("system_b", {}).get("by_model", {})
+        for m, m_data in bm_b.items():
+            if m not in aggregated_by_model:
+                aggregated_by_model[m] = {"calls": 0, "tokens": 0}
+            aggregated_by_model[m]["calls"] += m_data.get("calls", 0)
+            aggregated_by_model[m]["tokens"] += m_data.get("tokens", m_data.get("total_tokens", 0))
+
+        # System C additional calls (reviews and retries beyond first attempt)
+        sc = r.get("system_c", {})
+        bm_c = sc.get("by_model", {})
+        if bm_c:
+            for m, m_data in bm_c.items():
                 if m not in aggregated_by_model:
                     aggregated_by_model[m] = {"calls": 0, "tokens": 0}
                 aggregated_by_model[m]["calls"] += m_data.get("calls", 0)
                 aggregated_by_model[m]["tokens"] += m_data.get("tokens", m_data.get("total_tokens", 0))
+        else:
+            c_add_calls = sc.get("additional_llm_calls", 0)
+            c_add_tokens = sc.get("additional_tokens", 0)
+            if c_add_calls > 0 or c_add_tokens > 0:
+                cand_models = list(bm_b.keys()) or list(bm_a.keys())
+                target_m = cand_models[0] if cand_models else "unknown"
+                if target_m not in aggregated_by_model:
+                    aggregated_by_model[target_m] = {"calls": 0, "tokens": 0}
+                aggregated_by_model[target_m]["calls"] += c_add_calls
+                aggregated_by_model[target_m]["tokens"] += c_add_tokens
 
     if not aggregated_by_model:
         current_bm = get_usage_stats().get("by_model", {})
@@ -755,6 +811,8 @@ def generate_summary(
             "flag_rate": round(flagged_first_pass / total_first_pass, 4) if total_first_pass > 0 else 0.0,
             "true_flags": true_flags,
             "false_alarms": false_alarms,
+            "correct_but_unresolved": correct_but_unresolved_count,
+            "correct_but_unresolved_items": correct_but_unresolved_items,
             "total_retries_used": total_retries,
             "avg_rounds_per_item": round(avg_rounds, 2),
             "false_alarm_details": false_alarm_details,
@@ -805,6 +863,7 @@ def generate_summary(
         f"**Cases Finished**: {n_finished} of {expected_total} expected (Unique Items: {n_unique_items}, Repeats: {repeats})  ",
         f"**Resources**: {tot_a_calls + tot_c_calls} LLM calls, {tot_a_tokens + tot_c_tokens:,} tokens  ",
         f"**Models Used**: {models_display}  ",
+        "System C includes System B's first attempt, so B is not counted twice.  ",
         "",
         "## 1. System Accuracy Comparison",
         "",
@@ -888,6 +947,8 @@ def generate_summary(
         f"- **First-pass answers flagged**: {flagged_first_pass} of {total_first_pass} ({flagged_first_pass/total_first_pass*100:.1f}%)",
         f"- **True flags** (flagged an actually wrong answer): **{true_flags}**",
         f"- **False alarms** (flagged an actually correct answer): **{false_alarms}**",
+        f"- **Correct but unresolved items** (final answer right, reviewer verdict 'fail'): **{correct_but_unresolved_count}**",
+        "  Such items would be shown as \"Unresolved\" in the app even though the answer is right.",
         f"- **Total reviewer retries used**: {total_retries}",
         f"- **Average reviewer rounds per item**: {avg_rounds:.2f}",
         "",
@@ -914,8 +975,8 @@ def generate_summary(
         "",
         "## 5. Per-Item Results Table",
         "",
-        "| Item ID | Category | Difficulty | System A | System B | System C | Reviewer Rounds | Paired (B->C) |",
-        "| :---: | :--- | :--- | :---: | :---: | :---: | :---: | :--- |",
+        "| Item ID | Category | Difficulty | System A | System B | System C | Final reviewer verdict | Correct but unresolved | Reviewer Rounds | Paired (B->C) |",
+        "| :---: | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |",
     ])
 
     for r in records:
@@ -925,10 +986,14 @@ def generate_summary(
         a_ok = "PASS" if r.get("system_a", {}).get("is_correct") else "FAIL"
         b_ok = "PASS" if r.get("system_b", {}).get("is_correct") else "FAIL"
         c_ok = "PASS" if r.get("system_c", {}).get("is_correct") else "FAIL"
-        rounds_cnt = r.get("system_c", {}).get("rounds_count", 1)
+        sc = r.get("system_c", {})
+        final_verdict = str(sc.get("final_verdict") or sc.get("reviewer_verdict") or "unverified").strip().lower()
+        is_corr_unres = bool(sc.get("is_correct") and final_verdict == "fail")
+        unres_flag = "YES" if is_corr_unres else "-"
+        rounds_cnt = sc.get("rounds_count", 1)
         paired_tag = r.get("paired_bc", "")
         r_suffix = f" (r{r.get('repeat_index', 0) + 1})" if repeats > 1 else ""
-        md_lines.append(f"| `{i_id}`{r_suffix} | {cat} | {diff} | {a_ok} | {b_ok} | {c_ok} | {rounds_cnt} | {paired_tag} |")
+        md_lines.append(f"| `{i_id}`{r_suffix} | {cat} | {diff} | {a_ok} | {b_ok} | {c_ok} | {final_verdict} | {unres_flag} | {rounds_cnt} | {paired_tag} |")
 
     md_lines.append("")
 
@@ -1208,6 +1273,7 @@ def run_evaluation(
                         "first_pass_correct": ok_b,
                         "fixed_by_reviewer": (not ok_b) and res_c["is_correct"],
                         "harmed_by_reviewer": ok_b and (not res_c["is_correct"]),
+                        "by_model": res_c.get("by_model", {}),
                     },
                     "paired_bc": paired_bc,
                     "paired_ab": paired_ab,
