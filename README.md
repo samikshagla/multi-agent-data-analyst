@@ -18,8 +18,13 @@ Overview showing parsed columns, detected data types, row counts, and sample rec
 
 ![Dataset Snapshot Preview](docs/screenshots/ui-snapshot.png)
 
-### Reviewer Retry & Findings
-*(The interface screenshots for the reviewer critique loop catching a discrepancy and the reviewer audit findings tab are currently missing from `docs/screenshots/` and will be added in a future update).*
+### Reviewer Findings
+Audit view showing side-by-side recomputations (Analyst Result vs Reviewer Recomputed) and verification status:
+
+![Reviewer Findings Audit View](docs/screenshots/ui-reviewer-findings.png)
+
+### Reviewer Retry Flow
+*(The interface screenshot for the reviewer critique loop catching a discrepancy in the activity timeline is currently missing from `docs/screenshots/` and will be added in a future update).*
 
 ---
 
