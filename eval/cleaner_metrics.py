@@ -34,8 +34,8 @@ def _cells_differ(v_clean: Any, v_cleaned: Any) -> bool:
     - Numeric values within 1e-6 relative difference
     - Datatype changes preserving values (e.g., int -> float, string -> category)
     """
-    is_clean_na = pd.isna(v_clean)
-    is_cleaned_na = pd.isna(v_cleaned)
+    is_clean_na = bool(pd.api.types.is_scalar(v_clean) and pd.isna(v_clean))
+    is_cleaned_na = bool(pd.api.types.is_scalar(v_cleaned) and pd.isna(v_cleaned))
 
     if is_clean_na and is_cleaned_na:
         return False
@@ -53,8 +53,10 @@ def _cells_differ(v_clean: Any, v_cleaned: Any) -> bool:
         return rel_diff >= 1e-6
 
     # Boolean comparison
-    if isinstance(v_clean, (bool, np.bool_)) or isinstance(v_cleaned, (bool, np.bool_)):
+    if isinstance(v_clean, (bool, np.bool_)) and isinstance(v_cleaned, (bool, np.bool_)):
         return bool(v_clean) != bool(v_cleaned)
+    if isinstance(v_clean, (bool, np.bool_)) or isinstance(v_cleaned, (bool, np.bool_)):
+        return True
 
     # Text comparison: ignore case and surrounding whitespace
     str_clean = str(v_clean).strip().lower()

@@ -161,25 +161,37 @@ def build_evaluation_cases(
 
 def _to_json_friendly(val: Any, max_rows: int = 8) -> Any:
     """Converts a value, Series, or DataFrame into a JSON-friendly representation capped at max_rows."""
-    if val is None:
-        return None
-    if isinstance(val, (int, np.integer)):
-        return int(val)
-    if isinstance(val, (float, np.floating)):
-        return round(float(val), 4)
-    if isinstance(val, (bool, np.bool_)):
-        return bool(val)
-    if isinstance(val, pd.Series):
-        df = val.reset_index().head(max_rows)
-        return df.to_dict(orient="records")
-    if isinstance(val, pd.DataFrame):
-        df = val.head(max_rows)
-        return df.to_dict(orient="records")
-    if isinstance(val, list):
-        return val[:max_rows]
-    if isinstance(val, dict):
-        return val
-    return str(val)
+    try:
+        if val is None:
+            return None
+        if isinstance(val, (int, np.integer)):
+            return int(val)
+        if isinstance(val, (float, np.floating)):
+            if np.isnan(val) or not np.isfinite(val):
+                return None
+            return round(float(val), 4)
+        if isinstance(val, (bool, np.bool_)):
+            return bool(val)
+        if isinstance(val, (pd.Timestamp, pd.Period, pd.Interval)):
+            return str(val)
+        if isinstance(val, pd.Series):
+            try:
+                df = val.reset_index().head(max_rows)
+            except Exception:
+                df = pd.DataFrame({"index": list(val.index), "value": list(val.values)}).head(max_rows)
+            return [{str(k): _to_json_friendly(v, max_rows=max_rows) for k, v in row.items()} for row in df.to_dict(orient="records")]
+        if isinstance(val, pd.DataFrame):
+            df = val.head(max_rows)
+            return [{str(k): _to_json_friendly(v, max_rows=max_rows) for k, v in row.items()} for row in df.to_dict(orient="records")]
+        if isinstance(val, (list, tuple)):
+            return [_to_json_friendly(x, max_rows=max_rows) for x in val[:max_rows]]
+        if isinstance(val, dict):
+            return {str(k): _to_json_friendly(v, max_rows=max_rows) for k, v in val.items()}
+        if pd.api.types.is_scalar(val) and pd.isna(val):
+            return None
+        return str(val)
+    except Exception:
+        return str(val)
 
 
 def _format_markdown_value(val: Any, max_rows: int = 8) -> str:

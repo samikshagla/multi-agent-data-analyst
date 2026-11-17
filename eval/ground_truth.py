@@ -16,14 +16,20 @@ from tools.sandbox import run_code
 
 def _to_native_scalar(val: Any) -> Any:
     """Converts numpy numbers and pandas scalars to native Python types."""
-    if val is None or pd.isna(val):
+    if val is None:
         return None
     if isinstance(val, (bool, np.bool_)):
         return bool(val)
     if isinstance(val, (int, np.integer)):
         return int(val)
     if isinstance(val, (float, np.floating)):
+        if np.isnan(val) or not np.isfinite(val):
+            return None
         return float(val)
+    if isinstance(val, (pd.Timestamp, pd.Period, pd.Interval)):
+        return str(val)
+    if pd.api.types.is_scalar(val) and pd.isna(val):
+        return None
     return str(val)
 
 

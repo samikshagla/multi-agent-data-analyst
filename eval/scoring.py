@@ -100,9 +100,11 @@ def _compare_scalars(ref: Any, cand: Any, tol: float = 0.01) -> tuple[bool, str]
         return False, f"value {cand} vs {ref}"
 
     # Boolean check (must precede int check since bool subclasses int)
-    if isinstance(ref, (bool, np.bool_)) or isinstance(cand, (bool, np.bool_)):
+    if isinstance(ref, (bool, np.bool_)) and isinstance(cand, (bool, np.bool_)):
         if bool(ref) == bool(cand):
             return True, ""
+        return False, f"value {cand} vs {ref}"
+    if isinstance(ref, (bool, np.bool_)) or isinstance(cand, (bool, np.bool_)):
         return False, f"value {cand} vs {ref}"
 
     # Numeric check
@@ -136,7 +138,7 @@ def _normalize_row(row_series: pd.Series) -> tuple[list[str], list[float]]:
     nums: list[float] = []
 
     for cell in row_series:
-        if cell is None or pd.isna(cell):
+        if cell is None or (pd.api.types.is_scalar(cell) and pd.isna(cell)):
             texts.append("nan")
         elif isinstance(cell, (bool, np.bool_)):
             texts.append(str(bool(cell)).lower())

@@ -113,9 +113,17 @@ def diagnose_seed(seed: int = 42, csv_path: str = "data/sample.csv") -> None:
         for col in clean_df.columns:
             v_clean = orig_clean_row[col]
             v_dup = dup_row[col]
-            if pd.isna(v_clean) and pd.isna(v_dup):
+            c_na = bool(pd.api.types.is_scalar(v_clean) and pd.isna(v_clean))
+            d_na = bool(pd.api.types.is_scalar(v_dup) and pd.isna(v_dup))
+            if c_na and d_na:
                 continue
-            if v_clean != v_dup:
+            try:
+                is_diff = (v_clean != v_dup)
+                if hasattr(is_diff, "any"):
+                    is_diff = bool(is_diff.any())
+            except Exception:
+                is_diff = True
+            if is_diff:
                 diff_cols.append((col, v_clean, v_dup))
 
         key_val = orig_clean_row[key_col]
