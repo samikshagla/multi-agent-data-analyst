@@ -38,22 +38,59 @@ def make_dirty_dataset(
             "clean_row_count": 0,
             "clean_columns": clean_columns,
             "key_column": None,
+            "excluded_columns": [],
             "true_means": {},
+            "missing_values": {},
+            "inconsistent_text": None,
+            "impossible_values": None,
+            "numbers_stored_as_text": None,
+            "duplicate_rows": None,
         }
 
     rng = np.random.default_rng(seed)
 
-    # 1. Classify columns by dtype
+    # 1. Detect unique-valued key column to align rows between clean and dirty data
+    key_column = None
+    candidate_keys = [
+        c for c in clean_df.columns
+        if clean_df[c].nunique(dropna=True) == clean_row_count and clean_df[c].notna().all()
+    ]
+    if candidate_keys:
+        id_candidates = [
+            c for c in candidate_keys
+            if c.lower() == "id" or c.lower().endswith("_id") or "id" in c.lower()
+        ]
+        key_column = id_candidates[0] if id_candidates else candidate_keys[0]
+
+    # Exclude from every corruption type:
+    # - the key column
+    # - any column whose name is "id" or ends with "id" or "_id" (case-insensitive)
+    # - any non-float column whose values are all unique (candidate keys, GUIDs, unique text)
+    excluded_columns = [
+        c for c in clean_df.columns
+        if (
+            (key_column is not None and c == key_column)
+            or c.lower() == "id"
+            or c.lower().endswith("id")
+            or c.lower().endswith("_id")
+            or (not pd.api.types.is_float_dtype(clean_df[c]) and clean_df[c].nunique(dropna=True) == clean_row_count)
+        )
+    ]
+
+    # Classify remaining non-excluded columns by dtype
     numeric_cols = [
         c for c in clean_df.columns
-        if pd.api.types.is_numeric_dtype(clean_df[c]) and not pd.api.types.is_bool_dtype(clean_df[c])
+        if c not in excluded_columns
+        and pd.api.types.is_numeric_dtype(clean_df[c])
+        and not pd.api.types.is_bool_dtype(clean_df[c])
     ]
     text_cols = [
         c for c in clean_df.columns
-        if pd.api.types.is_string_dtype(clean_df[c]) or pd.api.types.is_object_dtype(clean_df[c])
+        if c not in excluded_columns
+        and (pd.api.types.is_string_dtype(clean_df[c]) or pd.api.types.is_object_dtype(clean_df[c]))
     ]
 
-    # Select columns for corruptions
+    # Select columns for corruptions from remaining non-excluded columns
     num_cols_for_missing = numeric_cols[:3] if len(numeric_cols) >= 3 else numeric_cols
     text_cols_for_missing = text_cols[:2] if len(text_cols) >= 2 else text_cols
 
@@ -85,24 +122,12 @@ def make_dirty_dataset(
         for col in sorted(affected_numeric_cols)
     }
 
-    # Detect unique-valued key column to align rows between clean and dirty data
-    key_column = None
-    candidate_keys = [
-        c for c in clean_df.columns
-        if clean_df[c].nunique(dropna=True) == clean_row_count and clean_df[c].notna().all()
-    ]
-    if candidate_keys:
-        id_candidates = [
-            c for c in candidate_keys
-            if c.lower() == "id" or c.lower().endswith("_id") or "id" in c.lower()
-        ]
-        key_column = id_candidates[0] if id_candidates else candidate_keys[0]
-
     dirty = clean_df.copy(deep=True)
     manifest: dict[str, Any] = {
         "clean_row_count": clean_row_count,
         "clean_columns": clean_columns,
         "key_column": key_column,
+        "excluded_columns": excluded_columns,
         "true_means": true_means,
         "missing_values": {},
         "inconsistent_text": None,
@@ -219,5 +244,20 @@ def make_dirty_dataset(
         "source_indices": dup_source_indices,
         "injected_indices": injected_indices,
     }
+
+    # Integrity assertions on key column
+    if key_column is not None:
+        assert dirty[key_column].notna().all(), (
+            f"Key column '{key_column}' contains nulls after corruption!"
+        )
+        dup_keys_count = int(dirty[key_column].duplicated().sum())
+        assert dup_keys_count == len(injected_indices), (
+            f"Key column duplicate count ({dup_keys_count}) does not match injected duplicate count ({len(injected_indices)})!"
+        )
+        expected_repeated_keys = set(clean_df.iloc[dup_source_indices][key_column])
+        actual_repeated_keys = set(dirty.loc[dirty[key_column].duplicated(keep=False), key_column])
+        assert actual_repeated_keys == expected_repeated_keys, (
+            "The only repeated keys in dirty_df must be the injected duplicate rows!"
+        )
 
     return dirty, manifest

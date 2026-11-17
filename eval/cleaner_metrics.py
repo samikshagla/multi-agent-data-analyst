@@ -80,7 +80,7 @@ def cleaner_metrics(
     Returns:
         JSON-serializable dictionary of cleaning metrics.
     """
-    # 0. Identify key column to align rows
+    # 0. Identify and validate key column to align rows
     key_col = manifest.get("key_column")
     if not key_col or key_col not in clean_df.columns:
         candidates = [
@@ -93,28 +93,47 @@ def cleaner_metrics(
         else:
             key_col = clean_df.columns[0]
 
+    # Validate that key column in clean_df is complete and unique
+    if key_col not in clean_df.columns:
+        raise ValueError(f"Key column '{key_col}' not found in clean_df.")
+    if clean_df[key_col].isna().any():
+        raise ValueError(f"Key column '{key_col}' in clean_df contains null values.")
+    if clean_df[key_col].nunique(dropna=False) != len(clean_df):
+        raise ValueError(
+            f"Key column '{key_col}' in clean_df is not unique "
+            f"({clean_df[key_col].nunique()} unique vs {len(clean_df)} rows)."
+        )
+
     has_key_in_cleaned = (key_col in cleaned_df.columns)
 
-    # 1. Row preservation and duplicate removal
+    # 1. Row preservation, duplicates, and identifier integrity
     expected_rows = int(len(clean_df))
     cleaned_rows = int(len(cleaned_df))
 
-    clean_keys = set(clean_df[key_col])
-    if has_key_in_cleaned:
-        cleaned_keys = set(cleaned_df[key_col])
-        valid_rows_lost = int(len(clean_keys - cleaned_keys))
-        duplicate_rows_remaining = int(cleaned_df[key_col].duplicated().sum())
-    else:
-        valid_rows_lost = expected_rows
-        duplicate_rows_remaining = int(cleaned_df.duplicated().sum())
-
-    dup_info = manifest.get("duplicate_rows") or {}
-    injected_dups = int(dup_info.get("count", 0))
-    if injected_dups > 0:
-        dups_removed = max(0, injected_dups - duplicate_rows_remaining)
-        duplicate_removal_rate = float(dups_removed / injected_dups)
+    # Exact duplicate rows in cleaned_df and dirty_df
+    duplicate_rows_remaining = int(cleaned_df.duplicated().sum())
+    dirty_exact_dups = int(dirty_df.duplicated().sum())
+    if dirty_exact_dups > 0:
+        raw_rate = (dirty_exact_dups - duplicate_rows_remaining) / dirty_exact_dups
+        duplicate_removal_rate = float(np.clip(raw_rate, 0.0, 1.0))
     else:
         duplicate_removal_rate = 1.0
+
+    # Identifier integrity:
+    # - key_nulls_in_cleaned: null keys in cleaned_df
+    # - key_duplicates_in_cleaned: duplicated NON-NULL keys in cleaned_df
+    # Treat rows with null key as lost
+    if has_key_in_cleaned:
+        key_nulls_in_cleaned = int(cleaned_df[key_col].isna().sum())
+        non_null_keys = cleaned_df[key_col].dropna()
+        key_duplicates_in_cleaned = int(non_null_keys.duplicated().sum())
+        clean_keys = set(clean_df[key_col])
+        cleaned_valid_keys = set(non_null_keys)
+        valid_rows_lost = int(len(clean_keys - cleaned_valid_keys))
+    else:
+        key_nulls_in_cleaned = cleaned_rows
+        key_duplicates_in_cleaned = 0
+        valid_rows_lost = expected_rows
 
     rows_metric = {
         "expected_rows": expected_rows,
@@ -122,14 +141,15 @@ def cleaner_metrics(
         "valid_rows_lost": valid_rows_lost,
         "duplicate_rows_remaining": duplicate_rows_remaining,
         "duplicate_removal_rate": duplicate_removal_rate,
+        "key_nulls_in_cleaned": key_nulls_in_cleaned,
+        "key_duplicates_in_cleaned": key_duplicates_in_cleaned,
     }
 
-    # Build key-indexed lookup for cleaned_df
-    # In case of duplicate keys in cleaned_df, use the first occurrence
+    # Build key-indexed lookup for cleaned_df (only valid, non-null keys)
     cleaned_by_key: dict[Any, pd.Series] = {}
     if has_key_in_cleaned:
-        cleaned_first = cleaned_df.drop_duplicates(subset=[key_col])
-        for _, row in cleaned_first.iterrows():
+        cleaned_valid = cleaned_df.dropna(subset=[key_col]).drop_duplicates(subset=[key_col])
+        for _, row in cleaned_valid.iterrows():
             cleaned_by_key[row[key_col]] = row
 
     # 2. Missing values handling
@@ -140,29 +160,40 @@ def cleaner_metrics(
         injected_count = int(info.get("count", 0))
         indices = info.get("indices", [])
 
-        remaining_missing = 0
-        valid_rows_removed = 0
-        handled_count = 0
+        filled_count = 0
+        row_removed_count = 0
+        still_missing_count = 0
 
         for idx in indices:
             row_key = clean_df.iloc[idx][key_col]
             if row_key not in cleaned_by_key:
-                # Row was removed to handle the missing value
-                valid_rows_removed += 1
-                handled_count += 1
+                # Key is absent from cleaned_df (row removed or key corrupted to null)
+                row_removed_count += 1
             else:
                 c_row = cleaned_by_key[row_key]
-                if col not in c_row or pd.isna(c_row[col]):
-                    remaining_missing += 1
+                if col in c_row and not pd.isna(c_row[col]):
+                    filled_count += 1
                 else:
-                    handled_count += 1
+                    still_missing_count += 1
 
-        rate_handled = float(handled_count / injected_count) if injected_count > 0 else 1.0
+        denom = injected_count if injected_count > 0 else 1
+        filled_rate = float(filled_count / denom)
+        row_removed_rate = float(row_removed_count / denom)
+        still_missing_rate = float(still_missing_count / denom)
+        rate_handled = float((filled_count + row_removed_count) / denom)
+
         missing_metrics[col] = {
             "injected_count": injected_count,
-            "remaining_missing": remaining_missing,
+            "filled_count": filled_count,
+            "filled_rate": filled_rate,
+            "row_removed_count": row_removed_count,
+            "row_removed_rate": row_removed_rate,
+            "still_missing_count": still_missing_count,
+            "still_missing_rate": still_missing_rate,
+            # Backward compatibility aliases
+            "remaining_missing": still_missing_count,
+            "valid_rows_removed": row_removed_count,
             "rate_handled": rate_handled,
-            "valid_rows_removed": valid_rows_removed,
         }
 
     # 3. Inconsistent text normalization
@@ -174,22 +205,37 @@ def cleaner_metrics(
         cleaned_distinct = int(cleaned_df[inc_col].dropna().nunique()) if inc_col in cleaned_df.columns else 0
 
         normalized_count = 0
+        rows_removed_count = 0
+        not_normalized_count = 0
+
         for idx in inc_indices:
             row_key = clean_df.iloc[idx][key_col]
-            true_label = str(clean_df.iloc[idx][inc_col]).strip().lower()
-            if row_key in cleaned_by_key:
+            if row_key not in cleaned_by_key:
+                rows_removed_count += 1
+            else:
                 c_row = cleaned_by_key[row_key]
+                true_label = str(clean_df.iloc[idx][inc_col]).strip().lower()
                 if inc_col in c_row:
                     cleaned_val = str(c_row[inc_col]).strip().lower()
                     if cleaned_val == true_label:
                         normalized_count += 1
+                    else:
+                        not_normalized_count += 1
+                else:
+                    not_normalized_count += 1
 
-        share_norm = float(normalized_count / len(inc_indices)) if inc_indices else 1.0
+        surviving_count = len(inc_indices) - rows_removed_count
+        share_norm = float(normalized_count / surviving_count) if surviving_count > 0 else 1.0
+
         inconsistent_text_metric: dict[str, Any] | None = {
             "column": inc_col,
             "true_distinct_labels": true_distinct,
             "cleaned_distinct_labels": cleaned_distinct,
             "injected_count": len(inc_indices),
+            "rows_removed": rows_removed_count,
+            "normalized_count": normalized_count,
+            "not_normalized_count": not_normalized_count,
+            "surviving_count": surviving_count,
             "share_normalized": share_norm,
         }
     else:
@@ -221,12 +267,17 @@ def cleaner_metrics(
         is_num = bool(nt_col in cleaned_df.columns and pd.api.types.is_numeric_dtype(cleaned_df[nt_col]))
 
         recovered_count = 0
+        rows_removed_count = 0
+        unrecovered_count = 0
+
         for pos, idx in enumerate(nt_indices):
             row_key = clean_df.iloc[idx][key_col]
             true_val = clean_df.iloc[idx][nt_col]
             mod_choice = pos % 3
 
-            if row_key in cleaned_by_key:
+            if row_key not in cleaned_by_key:
+                rows_removed_count += 1
+            else:
                 c_row = cleaned_by_key[row_key]
                 c_val = c_row.get(nt_col)
 
@@ -239,17 +290,29 @@ def cleaner_metrics(
                         rel_diff = abs(f_clean - f_cleaned) / denom
                         if rel_diff <= 0.01:
                             recovered_count += 1
+                        else:
+                            unrecovered_count += 1
+                    else:
+                        unrecovered_count += 1
                 else:
                     # Missing indicator like "N/A" or "null"
                     # Counted as handled if missing or imputed with a number
                     if pd.isna(c_val) or _is_numeric_value(c_val):
                         recovered_count += 1
+                    else:
+                        unrecovered_count += 1
 
-        rec_share = float(recovered_count / len(nt_indices)) if nt_indices else 1.0
+        surviving_count = len(nt_indices) - rows_removed_count
+        rec_share = float(recovered_count / surviving_count) if surviving_count > 0 else 1.0
+
         numbers_as_text_metric: dict[str, Any] | None = {
             "column": nt_col,
             "is_numeric": is_num,
             "injected_count": len(nt_indices),
+            "rows_removed": rows_removed_count,
+            "recovered_count": recovered_count,
+            "unrecovered_count": unrecovered_count,
+            "surviving_count": surviving_count,
             "recovery_share": rec_share,
         }
     else:
@@ -357,6 +420,11 @@ def cleaner_metrics(
 
     return {
         "rows": rows_metric,
+        "identifier_integrity": {
+            "key_column": key_col,
+            "key_nulls_in_cleaned": key_nulls_in_cleaned,
+            "key_duplicates_in_cleaned": key_duplicates_in_cleaned,
+        },
         "missing_values": missing_metrics,
         "inconsistent_text": inconsistent_text_metric,
         "negative_values": negative_values_metric,

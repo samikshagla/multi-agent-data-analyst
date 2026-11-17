@@ -18,6 +18,7 @@ import pytest
 from eval.baseline_cleaning import baseline_clean
 from eval.budget import BudgetExceeded, TokenBudget
 from eval.cleaner_metrics import cleaner_metrics
+from eval.inject_data_errors import make_dirty_dataset
 from eval.run_cleaner_eval import run_cleaner_evaluation
 from eval.run_reviewer_eval import run_evaluation as run_reviewer_evaluation
 import llm
@@ -423,3 +424,261 @@ def test_reviewer_eval_max_tokens_stops_cleanly(
     assert cases_file.exists()
     lines = cases_file.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
+
+
+# ============================================================================
+# 5. Diagnostic and Harness Regression Tests
+# ============================================================================
+
+def test_make_dirty_dataset_preserves_id_and_key_columns():
+    """
+    Verifies that make_dirty_dataset never changes the key or ID-like columns (no nulls,
+    all original values preserved), for seeds 42, 43, 44 on data/sample.csv.
+    """
+    csv_path = Path("data/sample.csv")
+    if not csv_path.exists():
+        pytest.skip("data/sample.csv not found")
+
+    clean_df = pd.read_csv(csv_path)
+    clean_keys = set(clean_df["order_id"])
+
+    for seed in [42, 43, 44]:
+        dirty_df, manifest = make_dirty_dataset(clean_df, seed=seed)
+        key_col = manifest["key_column"]
+        assert key_col == "order_id"
+        assert "order_id" in manifest["excluded_columns"]
+
+        # No nulls in key column
+        assert dirty_df[key_col].notna().all()
+
+        # All original clean keys are present in dirty_df
+        dirty_keys = set(dirty_df[key_col])
+        assert clean_keys.issubset(dirty_keys)
+
+        # ID-like columns (order_id, customer_id, cot_market_dynamics_rationale)
+        for col in manifest["excluded_columns"]:
+            assert col not in manifest["missing_values"]
+            if manifest["inconsistent_text"]:
+                assert col != manifest["inconsistent_text"]["column"]
+            if manifest["impossible_values"]:
+                assert col != manifest["impossible_values"]["column"]
+            if manifest["numbers_stored_as_text"]:
+                assert col != manifest["numbers_stored_as_text"]["column"]
+
+
+def test_known_answer_baseline_metrics_sample_csv():
+    """
+    KNOWN-ANSWER test: for seeds 42, 43, 44, baseline_clean gives:
+    - duplicate_removal_rate == 1.0
+    - valid_rows_lost == 0
+    - no rows removed for missing values (row_removed_count == 0, valid_rows_removed == 0)
+    - 0 missing values handled by row removal (row_removed_rate == 0.0)
+    - text normalisation == 1.0 (100%)
+    - key nulls == 0
+    - unintended change rate <= 0.001
+    """
+    csv_path = Path("data/sample.csv")
+    if not csv_path.exists():
+        pytest.skip("data/sample.csv not found")
+
+    clean_df = pd.read_csv(csv_path)
+
+    for seed in [42, 43, 44]:
+        dirty_df, manifest = make_dirty_dataset(clean_df, seed=seed)
+        cleaned_df, _ = baseline_clean(dirty_df)
+        metrics = cleaner_metrics(clean_df, dirty_df, cleaned_df, manifest)
+
+        # 1. Duplicates
+        assert metrics["rows"]["duplicate_removal_rate"] == 1.0
+        assert metrics["rows"]["duplicate_rows_remaining"] == 0
+
+        # 2. Row preservation & identifier integrity
+        assert metrics["rows"]["valid_rows_lost"] == 0
+        assert metrics["rows"]["key_nulls_in_cleaned"] == 0
+        assert metrics["identifier_integrity"]["key_nulls_in_cleaned"] == 0
+        assert metrics["rows"]["key_duplicates_in_cleaned"] == 0
+
+        # 3. Missing values
+        for col, mv_data in metrics["missing_values"].items():
+            assert mv_data["valid_rows_removed"] == 0
+            assert mv_data["row_removed_count"] == 0
+            assert mv_data["row_removed_rate"] == 0.0
+
+        # 4. Text normalisation
+        assert metrics["inconsistent_text"]["share_normalized"] == 1.0
+
+        # 5. Damage / Unintended change rate
+        assert metrics["damage"]["unintended_change_rate"] <= 0.001
+
+
+def test_cleaned_df_with_nan_keys_does_not_create_phantom_duplicates():
+    """
+    Verifies that a cleaned_df with NaN keys does NOT create phantom duplicates.
+    Series.duplicated() in pandas treats NaNs as duplicates, which previously collapsed
+    duplicate removal rate to 0.4%.
+    """
+    clean_df = pd.DataFrame({
+        "order_id": ["o1", "o2", "o3", "o4", "o5"],
+        "val": [10.0, 20.0, 30.0, 40.0, 50.0],
+    })
+    # Dirty df has 1 exact duplicate of row index 4 (o5)
+    dirty_df = pd.concat([clean_df, clean_df.iloc[[4]]], ignore_index=True)
+    manifest = {
+        "key_column": "order_id",
+        "duplicate_rows": {"count": 1, "source_indices": [4], "injected_indices": [5]},
+        "missing_values": {},
+        "true_means": {"val": 30.0},
+    }
+
+    # Cleaned df drops the duplicate, but has 2 NaN keys in different rows
+    cleaned_df = clean_df.copy()
+    cleaned_df.loc[0, "order_id"] = np.nan
+    cleaned_df.loc[1, "order_id"] = np.nan
+
+    metrics = cleaner_metrics(clean_df, dirty_df, cleaned_df, manifest)
+
+    # Exact duplicate rows in cleaned_df must be 0 (no phantom duplicates)
+    assert metrics["rows"]["duplicate_rows_remaining"] == 0
+    assert metrics["rows"]["duplicate_removal_rate"] == 1.0
+
+    # Key nulls must be detected
+    assert metrics["rows"]["key_nulls_in_cleaned"] == 2
+    assert metrics["identifier_integrity"]["key_nulls_in_cleaned"] == 2
+
+    # Rows with NaN keys are counted as lost
+    assert metrics["rows"]["valid_rows_lost"] == 2
+
+
+def test_row_removal_credited_only_when_key_really_absent():
+    """
+    Verifies that missing value row removal is credited ONLY when the row key is really absent
+    from cleaned_df, not merely because a cell is missing.
+    """
+    clean_df = pd.DataFrame({
+        "order_id": ["o1", "o2", "o3"],
+        "amount": [100.0, 200.0, 300.0],
+    })
+    dirty_df = clean_df.copy()
+    dirty_df.loc[1, "amount"] = np.nan  # injected missing at row 1 (o2)
+    manifest = {
+        "key_column": "order_id",
+        "duplicate_rows": {"count": 0},
+        "missing_values": {"amount": {"count": 1, "indices": [1]}},
+        "true_means": {"amount": 200.0},
+    }
+
+    # Scenario A: Row o2 is STILL PRESENT in cleaned_df, but amount is still missing
+    cleaned_a = dirty_df.copy()
+    metrics_a = cleaner_metrics(clean_df, dirty_df, cleaned_a, manifest)
+    mv_a = metrics_a["missing_values"]["amount"]
+    assert mv_a["row_removed_count"] == 0
+    assert mv_a["valid_rows_removed"] == 0
+    assert mv_a["still_missing_count"] == 1
+    assert mv_a["filled_count"] == 0
+
+    # Scenario B: Row o2 was ACTUALLY REMOVED from cleaned_df
+    cleaned_b = clean_df[clean_df["order_id"] != "o2"].copy()
+    metrics_b = cleaner_metrics(clean_df, dirty_df, cleaned_b, manifest)
+    mv_b = metrics_b["missing_values"]["amount"]
+    assert mv_b["row_removed_count"] == 1
+    assert mv_b["valid_rows_removed"] == 1
+    assert mv_b["still_missing_count"] == 0
+    assert mv_b["filled_count"] == 0
+
+
+def test_fill_missing_mode_on_key_column_increases_key_duplicates():
+    """
+    Verifies that if a cleaner imputes nulls in the key column using mode,
+    key_duplicates_in_cleaned reflects the resulting duplicate non-null keys.
+    """
+    clean_df = pd.DataFrame({
+        "order_id": [f"ord_{i}" for i in range(20)],
+        "val": [float(i) for i in range(20)],
+    })
+    dirty_df = clean_df.copy()
+    manifest = {
+        "key_column": "order_id",
+        "duplicate_rows": {"count": 0},
+        "missing_values": {},
+        "true_means": {},
+    }
+
+    # Cleaner imputed 5 keys with 'ord_0'
+    cleaned_df = clean_df.copy()
+    for i in range(1, 6):
+        cleaned_df.loc[i, "order_id"] = "ord_0"
+
+    metrics = cleaner_metrics(clean_df, dirty_df, cleaned_df, manifest)
+    # 5 duplicates of 'ord_0'
+    assert metrics["rows"]["key_duplicates_in_cleaned"] == 5
+    assert metrics["identifier_integrity"]["key_duplicates_in_cleaned"] == 5
+    # Since 5 unique keys were replaced, 5 valid keys were lost
+    assert metrics["rows"]["valid_rows_lost"] == 5
+
+
+def test_baseline_only_and_recompute_metrics_only_workflow(tmp_path: Path):
+    """
+    Verifies that:
+    1. --baseline-only runs without LLM, creates seeds.jsonl, summary.md, summary.json,
+       and saves artifacts under <run-dir>/artifacts/.
+    2. Adding a fake LLM output and running --recompute-metrics-only reloads artifacts,
+       recomputes metrics, and updates the summaries with zero LLM calls.
+    """
+    run_dir = tmp_path / "baseline_and_recompute_run"
+
+    clean_csv = tmp_path / "test_sample.csv"
+    sample_df = pd.DataFrame({
+        "order_id": [f"id_{i}" for i in range(50)],
+        "cat": ["A" if i % 2 == 0 else "B" for i in range(50)],
+        "num": [float(i) for i in range(50)],
+    })
+    sample_df.to_csv(clean_csv, index=False)
+
+    # 1. Run baseline-only
+    run_path = run_cleaner_evaluation(
+        seeds=[42],
+        run_dir=str(run_dir),
+        csv_path=str(clean_csv),
+        baseline_only=True,
+    )
+    assert Path(run_path).exists()
+
+    # Verify artifacts exist
+    artifacts_dir = run_dir / "artifacts"
+    dirty_file = artifacts_dir / "seed_42_dirty.csv"
+    manifest_file = artifacts_dir / "seed_42_manifest.json"
+    base_file = artifacts_dir / "seed_42_baseline.csv"
+    summary_md = run_dir / "summary.md"
+    summary_json = run_dir / "summary.json"
+
+    assert dirty_file.exists()
+    assert manifest_file.exists()
+    assert base_file.exists()
+    assert summary_md.exists()
+    assert summary_json.exists()
+
+    with open(summary_json, "r", encoding="utf-8") as f:
+        s_data = json.load(f)
+    assert s_data["total_llm_calls"] == 0
+    assert s_data["baseline_means"]["duplicate_removal_rate"] == 1.0
+
+    # 2. Simulate LLM output saved to artifacts
+    llm_file = artifacts_dir / "seed_42_llm.csv"
+    # LLM cleaned df: copy baseline
+    base_df = pd.read_csv(base_file)
+    base_df.to_csv(llm_file, index=False)
+
+    # 3. Run recompute-metrics-only
+    run_cleaner_evaluation(
+        run_dir=str(run_dir),
+        csv_path=str(clean_csv),
+        recompute_metrics_only=True,
+    )
+
+    with open(summary_json, "r", encoding="utf-8") as f:
+        recomputed_data = json.load(f)
+
+    # Both baseline and cleaner metrics now present
+    assert recomputed_data["baseline_means"]["duplicate_removal_rate"] == 1.0
+    assert recomputed_data["cleaner_means"]["duplicate_removal_rate"] == 1.0
+    assert recomputed_data["total_llm_calls"] == 0

@@ -71,6 +71,7 @@ def generate_cleaner_summary(
     run_dir: str | Path,
     csv_path: str = "data/sample.csv",
     total_time: float = 0.0,
+    sanity_failures: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Generates summary.json and summary.md from seed evaluation records.
@@ -79,6 +80,7 @@ def generate_cleaner_summary(
     n = len(records)
     seeds = [r["seed"] for r in records]
     seeds_str = ", ".join(str(s) for s in seeds)
+    has_cleaner = any(bool(r.get("cleaner", {}).get("metrics")) for r in records)
 
     # 1. Aggregate metrics across seeds
     # Metrics definitions
@@ -86,6 +88,8 @@ def generate_cleaner_summary(
         ("duplicate_removal_rate", "Duplicate Removal Rate", True),
         ("valid_rows_lost", "Valid Rows Lost", False),
         ("duplicate_rows_remaining", "Duplicate Rows Remaining", False),
+        ("key_nulls_in_cleaned", "Key Nulls in Cleaned", False),
+        ("key_duplicates_in_cleaned", "Key Duplicates in Cleaned", False),
         ("missing_handled_rate", "Missing Values Handled Rate", True),
         ("valid_rows_removed_missing", "Valid Rows Removed (Missing)", False),
         ("inconsistent_text_normalized", "Inconsistent Text Normalized", True),
@@ -97,7 +101,10 @@ def generate_cleaner_summary(
     ]
 
     def extract_metrics(rec: dict[str, Any], agent_key: str) -> dict[str, float | None]:
-        m = rec.get(agent_key, {}).get("metrics", {})
+        m = rec.get(agent_key, {}).get("metrics")
+        if not m:
+            return {k: None for k, _, _ in metric_keys}
+
         rows = m.get("rows", {})
         mv = m.get("missing_values", {})
         inc = m.get("inconsistent_text") or {}
@@ -117,10 +124,20 @@ def generate_cleaner_summary(
         drift_vals = [v.get("relative_drift") for v in drift.values() if v.get("relative_drift") is not None]
         drift_mean = float(np.mean(drift_vals)) if drift_vals else None
 
+        # Identifier integrity
+        key_nulls = rows.get("key_nulls_in_cleaned")
+        if key_nulls is None:
+            key_nulls = m.get("identifier_integrity", {}).get("key_nulls_in_cleaned")
+        key_dups = rows.get("key_duplicates_in_cleaned")
+        if key_dups is None:
+            key_dups = m.get("identifier_integrity", {}).get("key_duplicates_in_cleaned")
+
         return {
             "duplicate_removal_rate": rows.get("duplicate_removal_rate"),
             "valid_rows_lost": rows.get("valid_rows_lost"),
             "duplicate_rows_remaining": rows.get("duplicate_rows_remaining"),
+            "key_nulls_in_cleaned": float(key_nulls) if key_nulls is not None else None,
+            "key_duplicates_in_cleaned": float(key_dups) if key_dups is not None else None,
             "missing_handled_rate": mv_rate_mean,
             "valid_rows_removed_missing": mv_rows_removed,
             "inconsistent_text_normalized": inc.get("share_normalized"),
@@ -174,20 +191,56 @@ def generate_cleaner_summary(
         unhandled_baseline.append("Negative values: Baseline performs no range filtering or clipping.")
 
     # Check cleaner unhandled
-    if (cleaner_means.get("inconsistent_text_normalized") or 0) < 0.8:
-        unhandled_cleaner.append(
-            "Inconsistent text: Cleaner lacks semantic fuzzy matching or entity resolution "
-            "for category variations (e.g. 'Burgers' vs 'Burgers & Fast Food')."
-        )
-    if (cleaner_means.get("negative_values_remaining") or 0) > 0:
-        unhandled_cleaner.append(
-            "Negative values: Cleaner has no action for domain range constraints or absolute value conversion."
-        )
-    if (cleaner_means.get("numbers_as_text_recovered") or 0) < 0.8:
-        unhandled_cleaner.append(
-            "Numbers stored as text: Cleaner's convert_dtype coerces formatted strings like '$12.50' "
-            "to NaN rather than extracting numeric figures."
-        )
+    if has_cleaner:
+        if (cleaner_means.get("inconsistent_text_normalized") or 0) < 0.8:
+            unhandled_cleaner.append(
+                "Inconsistent text: Cleaner lacks semantic fuzzy matching or entity resolution "
+                "for category variations (e.g. 'Burgers' vs 'Burgers & Fast Food')."
+            )
+        if (cleaner_means.get("negative_values_remaining") or 0) > 0:
+            unhandled_cleaner.append(
+                "Negative values: Cleaner has no action for domain range constraints or absolute value conversion."
+            )
+        if (cleaner_means.get("numbers_as_text_recovered") or 0) < 0.8:
+            unhandled_cleaner.append(
+                "Numbers stored as text: Cleaner's convert_dtype coerces formatted strings like '$12.50' "
+                "to NaN rather than extracting numeric figures."
+            )
+    else:
+        unhandled_cleaner.append("LLM Cleaner agent was not evaluated in this run (baseline-only mode).")
+
+    # Missing Value Handling Breakdown
+    all_missing_cols = set()
+    for r in records:
+        all_missing_cols.update(r.get("baseline", {}).get("metrics", {}).get("missing_values", {}).keys())
+        all_missing_cols.update(r.get("cleaner", {}).get("metrics", {}).get("missing_values", {}).keys())
+
+    missing_cols_sorted = sorted(all_missing_cols)
+    missing_breakdown: dict[str, dict[str, Any]] = {}
+    for col in missing_cols_sorted:
+        b_inj = [r.get("baseline", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("injected_count", 0) for r in records]
+        b_filled = [r.get("baseline", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("filled_count", 0) for r in records]
+        b_rem = [r.get("baseline", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("row_removed_count", 0) for r in records]
+        b_still = [r.get("baseline", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("still_missing_count", 0) for r in records]
+
+        c_filled = [r.get("cleaner", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("filled_count", 0) for r in records]
+        c_rem = [r.get("cleaner", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("row_removed_count", 0) for r in records]
+        c_still = [r.get("cleaner", {}).get("metrics", {}).get("missing_values", {}).get(col, {}).get("still_missing_count", 0) for r in records]
+
+        tot_inj = sum(b_inj)
+        missing_breakdown[col] = {
+            "injected_count_total": tot_inj,
+            "baseline": {
+                "filled_count": sum(b_filled),
+                "row_removed_count": sum(b_rem),
+                "still_missing_count": sum(b_still),
+            },
+            "cleaner": {
+                "filled_count": sum(c_filled),
+                "row_removed_count": sum(c_rem),
+                "still_missing_count": sum(c_still),
+            } if has_cleaner else None,
+        }
 
     # Build summary dict
     summary_data = {
@@ -198,10 +251,12 @@ def generate_cleaner_summary(
         "total_seconds": round(total_time, 2),
         "total_llm_calls": total_calls,
         "total_tokens": total_tokens,
+        "sanity_failures": sanity_failures or [],
         "by_model": aggregated_by_model,
         "baseline_means": baseline_means,
         "cleaner_means": cleaner_means,
         "per_seed_records": records,
+        "missing_breakdown": missing_breakdown,
         "damage": {
             "baseline_unintended_change_rate_mean": baseline_means.get("unintended_change_rate"),
             "baseline_top_columns": base_top_cols,
@@ -229,13 +284,25 @@ def generate_cleaner_summary(
     md_lines = [
         f"# Cleaner Agent Evaluation Report (n = {n} seeds)",
         "",
+    ]
+
+    if sanity_failures:
+        md_lines.extend([
+            "> [!CAUTION]",
+            "> **HARNESS SANITY CHECK FAILED**:",
+        ])
+        for fail in sanity_failures:
+            md_lines.append(f"> - {fail}")
+        md_lines.append("")
+
+    md_lines.extend([
         f"- **Seeds**: `{seeds_str}`",
         f"- **Dataset**: `{csv_path}`",
         f"- **Generated**: `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`",
         f"- **Total LLM Calls**: `{total_calls}`",
         f"- **Total Tokens Consumed**: `{total_tokens:,}`",
         f"- **Runtime**: `{total_time:.1f}s`",
-    ]
+    ])
 
     if aggregated_by_model:
         models_str = ", ".join(f"{m} ({d['calls']} calls, {d['tokens']:,} tokens)" for m, d in aggregated_by_model.items())
@@ -264,10 +331,46 @@ def generate_cleaner_summary(
 
         md_lines.append(f"| {label} | {b_mean_str} | {c_mean_str} | {b_seed_str} | {c_seed_str} |")
 
+    # Missing Value Handling Breakdown section
+    if missing_cols_sorted:
+        md_lines.extend([
+            "",
+            "## 2. Missing Value Handling Breakdown",
+            "",
+            "| Column | Injected | Baseline: Filled | Baseline: Removed | Baseline: Still Missing | Cleaner: Filled | Cleaner: Removed | Cleaner: Still Missing |",
+            "|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|",
+        ])
+        for col in missing_cols_sorted:
+            b_info = missing_breakdown[col]["baseline"]
+            c_info = missing_breakdown[col]["cleaner"]
+            tot_inj = missing_breakdown[col]["injected_count_total"]
+
+            tot_b_f = b_info["filled_count"]
+            tot_b_r = b_info["row_removed_count"]
+            tot_b_s = b_info["still_missing_count"]
+
+            b_f_str = f"{tot_b_f} ({tot_b_f/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+            b_r_str = f"{tot_b_r} ({tot_b_r/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+            b_s_str = f"{tot_b_s} ({tot_b_s/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+
+            if c_info:
+                tot_c_f = c_info["filled_count"]
+                tot_c_r = c_info["row_removed_count"]
+                tot_c_s = c_info["still_missing_count"]
+                c_f_str = f"{tot_c_f} ({tot_c_f/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+                c_r_str = f"{tot_c_r} ({tot_c_r/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+                c_s_str = f"{tot_c_s} ({tot_c_s/tot_inj*100:.1f}%)" if tot_inj > 0 else "0 (0.0%)"
+            else:
+                c_f_str = "N/A"
+                c_r_str = "N/A"
+                c_s_str = "N/A"
+
+            md_lines.append(f"| `{col}` | {tot_inj} | {b_f_str} | {b_r_str} | {b_s_str} | {c_f_str} | {c_r_str} | {c_s_str} |")
+
     # Damage section
     md_lines.extend([
         "",
-        "## 2. Damage Analysis (Unintended Changes to Uncorrupted Cells)",
+        "## 3. Damage Analysis (Unintended Changes to Uncorrupted Cells)",
         "",
         f"- **Baseline Unintended Change Rate**: `{_format_pct(baseline_means.get('unintended_change_rate'))}`",
     ])
@@ -287,7 +390,7 @@ def generate_cleaner_summary(
     # Unhandled error types
     md_lines.extend([
         "",
-        "## 3. Error Types Not Handled",
+        "## 4. Error Types Not Handled",
         "",
         "### Baseline (Deterministic Script)",
     ])
@@ -310,7 +413,7 @@ def generate_cleaner_summary(
     # Execution and plan adherence
     md_lines.extend([
         "",
-        "## 4. Execution & Plan Adherence",
+        "## 5. Execution & Plan Adherence",
         "",
     ])
     for r in records:
@@ -329,7 +432,7 @@ def generate_cleaner_summary(
     # Limitations
     md_lines.extend([
         "",
-        "## 5. Limitations & Caveats",
+        "## 6. Limitations & Caveats",
         "",
         f"1. **Single Dataset**: Evaluation conducted solely on `data/sample.csv` (delivery orders).",
         f"2. **Synthetic Perturbation**: Errors injected by programmatic rules; distributions may differ from organic messy data.",
@@ -345,11 +448,207 @@ def generate_cleaner_summary(
     return summary_data
 
 
+def check_harness_sanity(records: list[dict[str, Any]], run_dir: str | Path | None = None) -> list[str]:
+    """
+    Checks baseline cleaning performance across all seeds.
+    A failure is reported if:
+    - Baseline duplicate_removal_rate is not 1.0 (100%)
+    - Baseline valid_rows_lost is not 0
+    - Baseline unintended_change_rate is > 0.001 (0.1%)
+    - The key column has nulls in the dirty dataset
+    """
+    failures: list[str] = []
+    run_path = Path(run_dir) if run_dir else None
+
+    for r in records:
+        s = r.get("seed")
+        b_m = r.get("baseline", {}).get("metrics", {})
+        rows = b_m.get("rows", {})
+        dmg = b_m.get("damage", {})
+
+        dup_rate = rows.get("duplicate_removal_rate")
+        lost = rows.get("valid_rows_lost")
+        change_rate = dmg.get("unintended_change_rate")
+
+        if dup_rate is not None and dup_rate < 1.0:
+            failures.append(f"Seed {s}: Baseline duplicate removal rate is {dup_rate * 100:.1f}% (expected 100.0%)")
+        if lost is not None and lost > 0:
+            failures.append(f"Seed {s}: Baseline valid rows lost is {lost} (expected 0)")
+        if change_rate is not None and change_rate > 0.001:
+            failures.append(f"Seed {s}: Baseline unintended change rate is {change_rate * 100:.3f}% (expected <= 0.1%)")
+
+        dirty_nulls = r.get("dirty_key_has_nulls")
+        if dirty_nulls is None and run_path:
+            dirty_csv = run_path / "artifacts" / f"seed_{s}_dirty.csv"
+            manifest_json = run_path / "artifacts" / f"seed_{s}_manifest.json"
+            if dirty_csv.exists() and manifest_json.exists():
+                try:
+                    with open(manifest_json, "r", encoding="utf-8") as mf:
+                        m_data = json.load(mf)
+                    k_col = m_data.get("key_column")
+                    if k_col:
+                        df_d = pd.read_csv(dirty_csv)
+                        if k_col in df_d.columns and df_d[k_col].isna().any():
+                            dirty_nulls = True
+                except Exception:
+                    pass
+
+        if dirty_nulls:
+            failures.append(f"Seed {s}: Key column contains null values in dirty dataset")
+
+    if failures:
+        print("\n" + "!" * 80, file=sys.stderr)
+        print("HARNESS SANITY CHECK FAILED:", file=sys.stderr)
+        for fail in failures:
+            print(f"  - {fail}", file=sys.stderr)
+        print("!" * 80 + "\n", file=sys.stderr)
+
+    return failures
+
+
+def recompute_metrics(
+    run_dir: str | Path,
+    csv_path: str = "data/sample.csv",
+) -> dict[str, Any]:
+    """
+    Recomputes metrics from saved artifacts without calling LLM.
+    Regenerates seeds.jsonl, summary.json, and summary.md.
+    """
+    run_path = Path(run_dir)
+    artifacts_dir = run_path / "artifacts"
+    if not artifacts_dir.exists():
+        raise FileNotFoundError(f"Artifacts directory '{artifacts_dir}' not found.")
+
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Source clean dataset not found at: '{csv_path}'")
+    clean_df = pd.read_csv(csv_path)
+
+    manifest_files = sorted(artifacts_dir.glob("seed_*_manifest.json"))
+    if not manifest_files:
+        raise FileNotFoundError(f"No seed manifests found in '{artifacts_dir}'")
+
+    existing_records: dict[int, dict[str, Any]] = {}
+    seeds_file = run_path / "seeds.jsonl"
+    if seeds_file.exists():
+        with open(seeds_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line_str = line.strip()
+                if line_str:
+                    try:
+                        rec = json.loads(line_str)
+                        if "seed" in rec:
+                            existing_records[int(rec["seed"])] = rec
+                    except Exception:
+                        pass
+
+    recomputed_records: list[dict[str, Any]] = []
+
+    for mf in manifest_files:
+        parts = mf.stem.split("_")
+        try:
+            seed = int(parts[1])
+        except (IndexError, ValueError):
+            continue
+
+        with open(mf, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+
+        dirty_csv = artifacts_dir / f"seed_{seed}_dirty.csv"
+        if not dirty_csv.exists():
+            continue
+        dirty_df = pd.read_csv(dirty_csv)
+
+        key_col = manifest.get("key_column")
+        dirty_has_nulls = bool(dirty_df[key_col].isna().any()) if key_col and key_col in dirty_df.columns else False
+
+        base_csv = artifacts_dir / f"seed_{seed}_baseline.csv"
+        if base_csv.exists():
+            base_cleaned_df = pd.read_csv(base_csv)
+            base_metrics = cleaner_metrics(clean_df, dirty_df, base_cleaned_df, manifest)
+        else:
+            base_metrics = {}
+
+        llm_csv = artifacts_dir / f"seed_{seed}_llm.csv"
+        if llm_csv.exists() and llm_csv.stat().st_size > 0:
+            llm_cleaned_df = pd.read_csv(llm_csv)
+            llm_metrics = cleaner_metrics(clean_df, dirty_df, llm_cleaned_df, manifest)
+        else:
+            llm_metrics = None
+
+        ex = existing_records.get(seed, {})
+        c_ex = ex.get("cleaner", {})
+        rec = {
+            "seed": seed,
+            "dirty_key_has_nulls": dirty_has_nulls,
+            "baseline": {
+                "metrics": base_metrics,
+                "time_seconds": ex.get("baseline", {}).get("time_seconds", 0.0),
+                "log": ex.get("baseline", {}).get("log", []),
+            },
+            "cleaner": {
+                "metrics": llm_metrics,
+                "time_seconds": c_ex.get("time_seconds", 0.0),
+                "llm_calls": c_ex.get("llm_calls", 0),
+                "tokens": c_ex.get("tokens", 0),
+                "by_model": c_ex.get("by_model", {}),
+                "used_llm_plan": c_ex.get("used_llm_plan", False),
+                "used_fallback": c_ex.get("used_fallback", False),
+                "steps_applied": c_ex.get("steps_applied", 0),
+                "steps_skipped": c_ex.get("steps_skipped", 0),
+                "cleaning_log": c_ex.get("cleaning_log", []),
+            } if llm_metrics is not None else {},
+        }
+        recomputed_records.append(rec)
+
+    # Rewrite seeds.jsonl
+    with open(seeds_file, "w", encoding="utf-8") as f:
+        for r in recomputed_records:
+            f.write(json.dumps(r, default=str) + "\n")
+
+    sanity_failures = check_harness_sanity(recomputed_records, run_path)
+
+    summary = generate_cleaner_summary(
+        records=recomputed_records,
+        run_dir=run_path,
+        csv_path=csv_path,
+        sanity_failures=sanity_failures,
+    )
+
+    # Print summary table to stdout
+    seeds_str = ", ".join(str(r["seed"]) for r in recomputed_records)
+    print("\n" + "=" * 80)
+    print(f"RECOMPUTED CLEANER EVALUATION SUMMARY (n = {len(recomputed_records)} seeds)")
+    print("=" * 80)
+    print(f"Seeds:                {seeds_str}")
+    print(f"Total LLM Calls:      {summary['total_llm_calls']}")
+    print(f"Total Tokens:         {summary['total_tokens']:,}")
+    print(f"Total Evaluation Time:{summary['total_seconds']}s")
+    if summary.get("by_model"):
+        m_info = ", ".join(f"{m} ({d['calls']} calls, {d['tokens']:,} tokens)" for m, d in summary["by_model"].items())
+        print(f"Models Used:          {m_info}")
+
+    print("-" * 80)
+    b_dmg = summary["baseline_means"].get("unintended_change_rate", 0.0) or 0.0
+    c_dmg = summary["cleaner_means"].get("unintended_change_rate")
+    print(f"Baseline Unintended Change Rate:    {b_dmg * 100:.2f}%")
+    if c_dmg is not None:
+        print(f"LLM Cleaner Unintended Change Rate: {c_dmg * 100:.2f}%")
+    else:
+        print(f"LLM Cleaner Unintended Change Rate: N/A (baseline-only mode)")
+    print("-" * 80)
+    print(f"Artifacts saved to:   {run_path / 'summary.md'}")
+    print("=" * 80 + "\n")
+
+    return summary
+
+
 def run_cleaner_evaluation(
     seeds: list[int] | None = None,
     max_tokens: int | None = None,
     run_dir: str | None = None,
     csv_path: str = "data/sample.csv",
+    baseline_only: bool = False,
+    recompute_metrics_only: bool = False,
 ) -> str:
     """
     Executes the Cleaner agent evaluation harness across the given random seeds.
@@ -359,10 +658,19 @@ def run_cleaner_evaluation(
         max_tokens: Maximum tokens allowed before pausing execution cleanly.
         run_dir: Output directory for evaluation artifacts.
         csv_path: Path to the clean ground-truth dataset.
+        baseline_only: If True, executes only the non-LLM baseline.
+        recompute_metrics_only: If True, recomputes metrics from saved artifacts.
 
     Returns:
         Path to the evaluation run directory.
     """
+    if recompute_metrics_only:
+        if not run_dir:
+            print("Error: --recompute-metrics-only requires --run-dir <path>", file=sys.stderr)
+            sys.exit(1)
+        recompute_metrics(run_dir=run_dir, csv_path=csv_path)
+        return str(run_dir)
+
     if seeds is None or len(seeds) == 0:
         seeds = [42, 43, 44]
 
@@ -374,13 +682,15 @@ def run_cleaner_evaluation(
     run_path = Path(run_dir)
     run_path.mkdir(parents=True, exist_ok=True)
     seeds_file = run_path / "seeds.jsonl"
+    artifacts_dir = run_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)
-    print("CLEANER AGENT EVALUATION RUNNER")
+    print("CLEANER AGENT EVALUATION RUNNER" + (" [BASELINE ONLY]" if baseline_only else ""))
     print(f"Run directory: {run_path.resolve()}")
     print(f"Clean dataset: {csv_path}")
     print(f"Seeds:         {seeds}")
-    if max_tokens:
+    if max_tokens and not baseline_only:
         print(f"Max tokens:    {max_tokens:,}")
     print("=" * 80)
 
@@ -424,6 +734,46 @@ def run_cleaner_evaluation(
         for idx, seed in enumerate(seeds_to_run):
             print(f"--- Evaluating Seed {seed} ({idx + 1}/{len(seeds_to_run)}) ---")
 
+            # A. Generate dirty dataset for this seed
+            dirty_df, manifest = make_dirty_dataset(clean_df.copy(deep=True), seed=seed)
+            dirty_csv_path = str(artifacts_dir / f"seed_{seed}_dirty.csv")
+            dirty_df.to_csv(dirty_csv_path, index=False)
+            dirty_df.to_csv(dirty_dir / f"seed_{seed}.csv", index=False)
+
+            # Save manifest artifact
+            with open(artifacts_dir / f"seed_{seed}_manifest.json", "w", encoding="utf-8") as mf:
+                json.dump(manifest, mf, indent=2, default=str)
+
+            # B. Run Baseline
+            print("  Running Baseline Cleaning Pipeline...")
+            t0_b = time.time()
+            base_cleaned_df, base_log = baseline_clean(dirty_df.copy(deep=True))
+            base_sec = time.time() - t0_b
+            base_cleaned_df.to_csv(artifacts_dir / f"seed_{seed}_baseline.csv", index=False)
+            base_metrics = cleaner_metrics(clean_df, dirty_df, base_cleaned_df, manifest)
+
+            key_col = manifest.get("key_column")
+            dirty_key_has_nulls = bool(dirty_df[key_col].isna().any()) if key_col and key_col in dirty_df.columns else False
+
+            if baseline_only:
+                record = {
+                    "seed": seed,
+                    "dirty_key_has_nulls": dirty_key_has_nulls,
+                    "baseline": {
+                        "metrics": base_metrics,
+                        "time_seconds": round(base_sec, 2),
+                        "log": base_log,
+                    },
+                    "cleaner": {},
+                }
+                out_f.write(json.dumps(record, default=str) + "\n")
+                out_f.flush()
+                completed_records.append(record)
+
+                dmg_b = base_metrics.get("damage", {}).get("unintended_change_rate", 0.0) * 100
+                print(f"  Seed {seed} Done! Baseline Damage: {dmg_b:.2f}%\n")
+                continue
+
             # Check budget BEFORE LLM invocation
             try:
                 budget.check()
@@ -436,18 +786,6 @@ def run_cleaner_evaluation(
                 )
                 print(f"To resume this evaluation, run:\n  python -m eval.run_cleaner_eval --run-dir {run_dir}", file=sys.stderr)
                 sys.exit(1)
-
-            # A. Generate dirty dataset for this seed
-            dirty_df, manifest = make_dirty_dataset(clean_df.copy(deep=True), seed=seed)
-            dirty_csv_path = str(dirty_dir / f"seed_{seed}.csv")
-            dirty_df.to_csv(dirty_csv_path, index=False)
-
-            # B. Run Baseline
-            print("  Running Baseline Cleaning Pipeline...")
-            t0_b = time.time()
-            base_cleaned_df, base_log = baseline_clean(dirty_df.copy(deep=True))
-            base_sec = time.time() - t0_b
-            base_metrics = cleaner_metrics(clean_df, dirty_df, base_cleaned_df, manifest)
 
             # C. Run Cleaner Agent
             print("  Running Cleaner Agent (LLM)...")
@@ -503,6 +841,8 @@ def run_cleaner_evaluation(
             else:
                 llm_cleaned_df = pd.DataFrame()
 
+            llm_cleaned_df.to_csv(artifacts_dir / f"seed_{seed}_llm.csv", index=False)
+
             cleaning_log = cleaner_out.get("cleaning_log", [])
             events = cleaner_out.get("events", [])
 
@@ -524,6 +864,7 @@ def run_cleaner_evaluation(
 
             record = {
                 "seed": seed,
+                "dirty_key_has_nulls": dirty_key_has_nulls,
                 "baseline": {
                     "metrics": base_metrics,
                     "time_seconds": round(base_sec, 2),
@@ -552,19 +893,22 @@ def run_cleaner_evaluation(
             dmg_c = llm_metrics.get("damage", {}).get("unintended_change_rate", 0.0) * 100
             print(f"  Seed {seed} Done! Damage: Baseline {dmg_b:.2f}% | Cleaner {dmg_c:.2f}%\n")
 
-    # 4. Generate summary
+    # 4. Harness sanity check & summary generation
+    sanity_failures = check_harness_sanity(completed_records, run_path)
+
     total_run_time = time.time() - t_start
     summary = generate_cleaner_summary(
         records=completed_records,
         run_dir=run_path,
         csv_path=csv_path,
         total_time=total_run_time,
+        sanity_failures=sanity_failures,
     )
 
     # 5. Print summary table to stdout
     seeds_str = ", ".join(str(r["seed"]) for r in completed_records)
     print("\n" + "=" * 80)
-    print(f"CLEANER EVALUATION SUMMARY (n = {len(completed_records)} seeds)")
+    print(f"CLEANER EVALUATION SUMMARY (n = {len(completed_records)} seeds)" + (" [BASELINE ONLY]" if baseline_only else ""))
     print("=" * 80)
     print(f"Seeds:                {seeds_str}")
     print(f"Total LLM Calls:      {summary['total_llm_calls']}")
@@ -573,14 +917,15 @@ def run_cleaner_evaluation(
     if summary.get("by_model"):
         m_info = ", ".join(f"{m} ({d['calls']} calls, {d['tokens']:,} tokens)" for m, d in summary["by_model"].items())
         print(f"Models Used:          {m_info}")
-    if len(summary.get("by_model", {})) > 1:
-        print("Multiple models were used in this run")
 
     print("-" * 80)
     b_dmg = summary["baseline_means"].get("unintended_change_rate", 0.0) or 0.0
-    c_dmg = summary["cleaner_means"].get("unintended_change_rate", 0.0) or 0.0
+    c_dmg = summary["cleaner_means"].get("unintended_change_rate")
     print(f"Baseline Unintended Change Rate:    {b_dmg * 100:.2f}%")
-    print(f"LLM Cleaner Unintended Change Rate: {c_dmg * 100:.2f}%")
+    if c_dmg is not None:
+        print(f"LLM Cleaner Unintended Change Rate: {c_dmg * 100:.2f}%")
+    else:
+        print(f"LLM Cleaner Unintended Change Rate: N/A (baseline-only mode)")
     print("-" * 80)
     print(f"Artifacts saved to:   {run_path / 'summary.md'}")
     print("=" * 80 + "\n")
@@ -594,6 +939,8 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=None, help="Maximum tokens allowed before stopping cleanly")
     parser.add_argument("--run-dir", type=str, default=None, help="Directory to store evaluation artifacts")
     parser.add_argument("--csv-path", type=str, default="data/sample.csv", help="Source clean dataset CSV")
+    parser.add_argument("--baseline-only", action="store_true", help="Run only the non-LLM baseline pipeline")
+    parser.add_argument("--recompute-metrics-only", action="store_true", help="Recompute metrics and summaries from saved artifacts without running LLM")
 
     args = parser.parse_args()
     run_cleaner_evaluation(
@@ -601,6 +948,8 @@ def main() -> None:
         max_tokens=args.max_tokens,
         run_dir=args.run_dir,
         csv_path=args.csv_path,
+        baseline_only=args.baseline_only,
+        recompute_metrics_only=args.recompute_metrics_only,
     )
 
 
