@@ -10,25 +10,37 @@ import numpy as np
 import pandas as pd
 
 
-def wilson_ci(successes: int, total: int, z: float = 1.96) -> tuple[float, float]:
+def wilson_ci_from_rate(p: float, n: int | float, z: float = 1.96) -> tuple[float, float]:
     """
-    Computes the Wilson score interval for a binomial proportion.
+    Computes the Wilson score interval for a binomial rate p (between 0.0 and 1.0)
+    given sample size n (integer or float).
     Returns (low, high) as fractions between 0.0 and 1.0.
-    Safe for total = 0 (returns (0.0, 0.0)).
+    Applies no rounding to counts, safe for n <= 0 (returns (0.0, 0.0)).
     """
-    if total <= 0:
+    if n <= 0:
         return 0.0, 0.0
 
-    n = float(total)
-    p = float(successes) / n
+    n_f = float(n)
+    p_f = max(0.0, min(1.0, float(p)))
     z2 = z * z
-    denom = 1.0 + z2 / n
-    center = p + z2 / (2.0 * n)
-    spread = z * math.sqrt((p * (1.0 - p) / n) + (z2 / (4.0 * n * n)))
+    denom = 1.0 + z2 / n_f
+    center = p_f + z2 / (2.0 * n_f)
+    spread = z * math.sqrt(max(0.0, (p_f * (1.0 - p_f) / n_f) + (z2 / (4.0 * n_f * n_f))))
 
     low = max(0.0, (center - spread) / denom)
     high = min(1.0, (center + spread) / denom)
     return low, high
+
+
+def wilson_ci(successes: int, total: int, z: float = 1.96) -> tuple[float, float]:
+    """
+    Computes the Wilson score interval for a binomial proportion.
+    Returns (low, high) as fractions between 0.0 and 1.0.
+    Safe for total <= 0 (returns (0.0, 0.0)).
+    """
+    if total <= 0:
+        return 0.0, 0.0
+    return wilson_ci_from_rate(float(successes) / float(total), total, z=z)
 
 
 def _to_dataframe_if_possible(val: Any) -> pd.DataFrame | None:

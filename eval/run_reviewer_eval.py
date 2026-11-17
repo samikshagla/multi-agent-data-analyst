@@ -25,7 +25,7 @@ from agents.reviewer import reviewer_node
 from eval.benchmark import BENCHMARK
 from eval.budget import BudgetExceeded, TokenBudget
 from eval.ground_truth import compute_ground_truth, load_ground_truth, save_ground_truth
-from eval.metrics import breakdown, confusion, magnitude_bucket, wilson_ci
+from eval.metrics import breakdown, confusion, magnitude_bucket, wilson_ci, wilson_ci_from_rate
 from eval.scoring import answer_correct
 from llm import get_usage_stats, LLMConfigError, LLMUnavailableError
 from tools.sandbox import run_code
@@ -463,6 +463,55 @@ def _get_base_case_id(case_id: str) -> str:
     return re.sub(r"_r\d+$", "", str(case_id))
 
 
+def _get_repeat_idx(r: dict[str, Any]) -> int:
+    """Extracts 0-based repeat index from record."""
+    if "repeat_index" in r and r["repeat_index"] is not None:
+        return int(r["repeat_index"])
+    m = re.search(r"_r(\d+)$", str(r.get("case_id", "")))
+    return int(m.group(1)) - 1 if m else 0
+
+
+def _calc_subgroup(
+    sub_records: list[dict[str, Any]],
+    sorted_r_indices: list[int],
+    is_correct: bool = False,
+) -> dict[str, Any]:
+    """Computes subgroup summary statistics across repeats."""
+    if not sub_records:
+        return {
+            "unique_cases": 0,
+            "observations": 0,
+            "mean_detected": 0.0,
+            "detection_rate": 0.0,
+            "ci": (0.0, 0.0),
+        }
+    u_ids = set(_get_base_case_id(r["case_id"]) for r in sub_records)
+    n_u = len(u_ids)
+    obs = len(sub_records)
+
+    r_counts: list[int] = []
+    r_rates: list[float] = []
+    for r_idx in sorted_r_indices:
+        r_recs = [r for r in sub_records if _get_repeat_idx(r) == r_idx]
+        n_r = len(r_recs)
+        d_r = sum(1 for r in r_recs if r.get("verdict") == "fail")
+        rate_r = (d_r / n_r) if n_r > 0 else 0.0
+        r_counts.append(d_r)
+        if n_r > 0:
+            r_rates.append(rate_r)
+
+    m_det = float(np.mean(r_counts)) if r_counts else 0.0
+    m_rate = float(np.mean(r_rates)) if r_rates else 0.0
+    ci = wilson_ci_from_rate(m_rate, n_u)
+    return {
+        "unique_cases": n_u,
+        "observations": obs,
+        "mean_detected": m_det,
+        "detection_rate": m_rate,
+        "ci": ci,
+    }
+
+
 def summarize_run(
     run_dir: str | Path,
     repeats: int | None = None,
@@ -533,11 +582,7 @@ def generate_summary(
     # 2. Per-repeat statistics & metrics
     records_by_repeat: dict[int, list[dict[str, Any]]] = {}
     for r in records:
-        if "repeat_index" in r and r["repeat_index"] is not None:
-            r_idx = int(r["repeat_index"])
-        else:
-            m = re.search(r"_r(\d+)$", str(r.get("case_id", "")))
-            r_idx = int(m.group(1)) - 1 if m else 0
+        r_idx = _get_repeat_idx(r)
         records_by_repeat.setdefault(r_idx, []).append(r)
 
     sorted_r_indices = sorted(records_by_repeat.keys())
@@ -556,6 +601,13 @@ def generate_summary(
         det_r = sum(1 for r in r_wrong if r.get("verdict") == "fail")
         det_rate_r = (det_r / n_wrong_r) if n_wrong_r > 0 else 0.0
         det_ci_r = wilson_ci(det_r, n_wrong_r)
+
+        right_r = sum(1 for r in r_wrong if r.get("verdict") == "fail" and r.get("recomputed_result_correct") is True)
+        right_rate_r = (right_r / n_wrong_r) if n_wrong_r > 0 else 0.0
+        right_ci_r = wilson_ci(right_r, n_wrong_r)
+
+        luck_r = sum(1 for r in r_wrong if r.get("verdict") == "fail" and r.get("recomputed_result_correct") is not True)
+        luck_rate_r = (luck_r / n_wrong_r) if n_wrong_r > 0 else 0.0
 
         fa_r = sum(1 for r in r_correct if r.get("verdict") == "fail")
         fa_rate_r = (fa_r / n_correct_r) if n_correct_r > 0 else 0.0
@@ -578,6 +630,12 @@ def generate_summary(
             "detection_rate": det_rate_r,
             "detection_rate_ci": det_ci_r,
             "detection_counts": f"{det_r}/{n_wrong_r}",
+            "detected_right_reason": right_r,
+            "right_reason_rate": right_rate_r,
+            "right_reason_rate_ci": right_ci_r,
+            "right_reason_counts": f"{right_r}/{n_wrong_r}",
+            "detected_by_luck": luck_r,
+            "by_luck_rate": luck_rate_r,
             "total_correct": n_correct_r,
             "false_alarms": fa_r,
             "false_alarm_rate": fa_rate_r,
@@ -602,40 +660,51 @@ def generate_summary(
 
     det_rates = [s["detection_rate"] for s in per_repeat_stats if s["total_wrong"] > 0]
     headline_det_rate = float(np.mean(det_rates)) if det_rates else 0.0
-    effective_det = round(headline_det_rate * n_unique_wrong)
-    headline_det_ci = wilson_ci(effective_det, n_unique_wrong)
+    headline_det_ci = wilson_ci_from_rate(headline_det_rate, n_unique_wrong)
+
+    right_rates = [s["right_reason_rate"] for s in per_repeat_stats if s["total_wrong"] > 0]
+    headline_right_reason_rate = float(np.mean(right_rates)) if right_rates else 0.0
+    headline_right_reason_ci = wilson_ci_from_rate(headline_right_reason_rate, n_unique_wrong)
 
     fa_rates = [s["false_alarm_rate"] for s in per_repeat_stats if s["total_correct"] > 0]
     headline_fa_rate = float(np.mean(fa_rates)) if fa_rates else 0.0
-    effective_fa = round(headline_fa_rate * n_unique_correct)
-    headline_fa_ci = wilson_ci(effective_fa, n_unique_correct)
+    headline_fa_ci = wilson_ci_from_rate(headline_fa_rate, n_unique_correct)
 
     unver_rates = [s["unverified_rate"] for s in per_repeat_stats if s["finished_cases"] > 0]
     headline_unver_rate = float(np.mean(unver_rates)) if unver_rates else 0.0
-    effective_unver = round(headline_unver_rate * n_unique_all)
-    headline_unver_ci = wilson_ci(effective_unver, n_unique_all)
+    headline_unver_ci = wilson_ci_from_rate(headline_unver_rate, n_unique_all)
 
     prec_rates = [s["precision"] for s in per_repeat_stats if (s["detection"] + s["false_alarms"]) > 0]
     headline_precision = float(np.mean(prec_rates)) if prec_rates else 0.0
-    effective_prec_total = effective_det + effective_fa
-    headline_prec_ci = wilson_ci(effective_det, effective_prec_total) if effective_prec_total > 0 else (0.0, 0.0)
+    mean_fail_verdicts = float(np.mean([s["detection"] + s["false_alarms"] for s in per_repeat_stats])) if per_repeat_stats else 0.0
+    headline_prec_ci = wilson_ci_from_rate(headline_precision, mean_fail_verdicts)
 
     total_det = sum(s["detection"] for s in per_repeat_stats)
     total_w = sum(s["total_wrong"] for s in per_repeat_stats)
+    total_right_reason = sum(s["detected_right_reason"] for s in per_repeat_stats)
+    total_luck = sum(s["detected_by_luck"] for s in per_repeat_stats)
     total_fa = sum(s["false_alarms"] for s in per_repeat_stats)
     total_c = sum(s["total_correct"] for s in per_repeat_stats)
     total_unver = sum(s["unverified"] for s in per_repeat_stats)
+    total_flags = total_det + total_fa
+
+    mean_det = float(np.mean([s["detection"] for s in per_repeat_stats])) if per_repeat_stats else 0.0
+    mean_right_reason = float(np.mean([s["detected_right_reason"] for s in per_repeat_stats])) if per_repeat_stats else 0.0
+    mean_fa = float(np.mean([s["false_alarms"] for s in per_repeat_stats])) if per_repeat_stats else 0.0
+    mean_unver = float(np.mean([s["unverified"] for s in per_repeat_stats])) if per_repeat_stats else 0.0
 
     if repeats > 1:
-        det_counts_str = f"{total_det}/{total_w} ({headline_det_rate * n_unique_wrong:.1f}/{n_unique_wrong} avg)"
-        fa_counts_str = f"{total_fa}/{total_c} ({headline_fa_rate * n_unique_correct:.1f}/{n_unique_correct} avg)"
-        unver_counts_str = f"{total_unver}/{n_finished} ({headline_unver_rate * n_unique_all:.1f}/{n_unique_all} avg)"
+        det_counts_str = f"{total_det}/{total_w} ({mean_det:.1f}/{n_unique_wrong} avg)"
+        right_reason_counts_str = f"{total_right_reason}/{total_w} ({mean_right_reason:.1f}/{n_unique_wrong} avg)"
+        fa_counts_str = f"{total_fa}/{total_c} ({mean_fa:.1f}/{n_unique_correct} avg)"
+        unver_counts_str = f"{total_unver}/{n_finished} ({mean_unver:.1f}/{n_unique_all} avg)"
+        prec_counts_str = f"{total_det}/{total_flags} ({mean_det:.1f}/{mean_fail_verdicts:.1f} avg)" if total_flags > 0 else "0/0"
     else:
         det_counts_str = f"{total_det}/{total_w}"
+        right_reason_counts_str = f"{total_right_reason}/{total_w}"
         fa_counts_str = f"{total_fa}/{total_c}"
         unver_counts_str = f"{total_unver}/{n_finished}"
-
-    prec_counts_str = f"{effective_det}/{effective_prec_total}" if effective_prec_total > 0 else "0/0"
+        prec_counts_str = f"{total_det}/{total_flags}" if total_flags > 0 else "0/0"
 
     # 4. Verdict flips across repeats
     base_groups: dict[str, dict[str, Any]] = {}
@@ -766,14 +835,108 @@ def generate_summary(
     magnitude_buckets: dict[str, Any] = {}
     small_sample_caveats: list[str] = []
     for b_name in ["subtle", "moderate", "gross", "structural"]:
-        if b_name in by_bucket:
-            b_data = dict(by_bucket[b_name])
-            cnt = b_data.get("count", 0)
-            if cnt < 10:
-                caveat_str = f"small sample (n={cnt}), interpret with care"
+        b_records = [r for r in records if r.get("magnitude_bucket") == b_name and r.get("is_wrong")]
+        if b_records:
+            sg = _calc_subgroup(b_records, sorted_r_indices, is_correct=False)
+            b_data: dict[str, Any] = {
+                "count": sg["observations"],
+                "unique_cases": sg["unique_cases"],
+                "observations": sg["observations"],
+                "detection": sum(1 for r in b_records if r.get("verdict") == "fail"),
+                "missed": sum(1 for r in b_records if r.get("verdict") == "pass"),
+                "wrong_unverified": sum(1 for r in b_records if r.get("verdict") not in ("fail", "pass")),
+                "total_wrong": sg["observations"],
+                "detected_mean": sg["mean_detected"],
+                "detection_rate": sg["detection_rate"],
+                "detection_rate_ci": list(sg["ci"]),
+            }
+            if sg["unique_cases"] < 10:
+                caveat_str = f"small sample (n={sg['unique_cases']}), interpret with care"
                 b_data["caveat"] = caveat_str
                 small_sample_caveats.append(f"- `{b_name}`: {caveat_str}")
             magnitude_buckets[b_name] = b_data
+
+    by_kind_computed: dict[str, Any] = {}
+    all_kinds = sorted(set(str(r.get("kind", "")) for r in records if r.get("kind")))
+    for k_name in all_kinds:
+        is_corr = (k_name == "correct")
+        if is_corr:
+            k_records = [r for r in records if r.get("kind") == k_name and not r.get("is_wrong")]
+        else:
+            k_records = [r for r in records if r.get("kind") == k_name and r.get("is_wrong")]
+        if not k_records:
+            continue
+        sg = _calc_subgroup(k_records, sorted_r_indices, is_correct=is_corr)
+        k_data: dict[str, Any] = {
+            "count": sg["observations"],
+            "unique_cases": sg["unique_cases"],
+            "observations": sg["observations"],
+            "detection": sum(1 for r in k_records if r.get("verdict") == "fail"),
+            "missed": sum(1 for r in k_records if r.get("verdict") == "pass"),
+            "detected_mean": sg["mean_detected"],
+            "detection_rate": sg["detection_rate"],
+            "detection_rate_ci": list(sg["ci"]),
+            "is_correct": is_corr,
+        }
+        if is_corr:
+            k_data["false_alarms"] = k_data["detection"]
+            k_data["false_alarm_rate"] = sg["detection_rate"]
+            k_data["false_alarm_rate_ci"] = list(sg["ci"])
+        by_kind_computed[k_name] = k_data
+
+    by_category_computed: dict[str, Any] = {}
+    all_cats = sorted(set(str(r.get("category", "")) for r in records if r.get("category")))
+    for cat in all_cats:
+        cat_wrong = [r for r in records if r.get("category") == cat and r.get("is_wrong")]
+        if not cat_wrong:
+            continue
+        sg = _calc_subgroup(cat_wrong, sorted_r_indices, is_correct=False)
+        cat_data: dict[str, Any] = {
+            "count": sg["observations"],
+            "unique_cases": sg["unique_cases"],
+            "observations": sg["observations"],
+            "detection": sum(1 for r in cat_wrong if r.get("verdict") == "fail"),
+            "missed": sum(1 for r in cat_wrong if r.get("verdict") == "pass"),
+            "detected_mean": sg["mean_detected"],
+            "detection_rate": sg["detection_rate"],
+            "detection_rate_ci": list(sg["ci"]),
+        }
+        cat_correct = [r for r in records if r.get("category") == cat and not r.get("is_wrong")]
+        if cat_correct:
+            sg_c = _calc_subgroup(cat_correct, sorted_r_indices, is_correct=True)
+            cat_data["unique_correct_cases"] = sg_c["unique_cases"]
+            cat_data["total_correct"] = sg_c["observations"]
+            cat_data["false_alarms"] = sum(1 for r in cat_correct if r.get("verdict") == "fail")
+            cat_data["false_alarm_rate"] = sg_c["detection_rate"]
+            cat_data["false_alarm_rate_ci"] = list(sg_c["ci"])
+        by_category_computed[cat] = cat_data
+
+    by_difficulty_computed: dict[str, Any] = {}
+    all_diffs = sorted(set(str(r.get("difficulty", "")) for r in records if r.get("difficulty")))
+    for diff in all_diffs:
+        diff_wrong = [r for r in records if r.get("difficulty") == diff and r.get("is_wrong")]
+        if not diff_wrong:
+            continue
+        sg = _calc_subgroup(diff_wrong, sorted_r_indices, is_correct=False)
+        diff_data: dict[str, Any] = {
+            "count": sg["observations"],
+            "unique_cases": sg["unique_cases"],
+            "observations": sg["observations"],
+            "detection": sum(1 for r in diff_wrong if r.get("verdict") == "fail"),
+            "missed": sum(1 for r in diff_wrong if r.get("verdict") == "pass"),
+            "detected_mean": sg["mean_detected"],
+            "detection_rate": sg["detection_rate"],
+            "detection_rate_ci": list(sg["ci"]),
+        }
+        diff_correct = [r for r in records if r.get("difficulty") == diff and not r.get("is_wrong")]
+        if diff_correct:
+            sg_c = _calc_subgroup(diff_correct, sorted_r_indices, is_correct=True)
+            diff_data["unique_correct_cases"] = sg_c["unique_cases"]
+            diff_data["total_correct"] = sg_c["observations"]
+            diff_data["false_alarms"] = sum(1 for r in diff_correct if r.get("verdict") == "fail")
+            diff_data["false_alarm_rate"] = sg_c["detection_rate"]
+            diff_data["false_alarm_rate_ci"] = list(sg_c["ci"])
+        by_difficulty_computed[diff] = diff_data
 
     correct_passed = total_c - total_fa - conf.get("correct_unverified", 0)
     correct_cases_performance = {
@@ -832,12 +995,15 @@ def generate_summary(
             "detection_rate": headline_det_rate,
             "detection_rate_ci": list(headline_det_ci),
             "detection_counts": det_counts_str,
+            "right_reason_rate": headline_right_reason_rate,
+            "right_reason_rate_ci": list(headline_right_reason_ci),
+            "right_reason_counts": right_reason_counts_str,
             "false_alarm_rate": headline_fa_rate,
             "false_alarm_rate_ci": list(headline_fa_ci),
             "false_alarm_counts": fa_counts_str,
             "unverified_rate": headline_unver_rate,
             "unverified_rate_ci": list(headline_unver_ci),
-            "unverified_counts": f"{round(headline_unver_rate * n_unique_all)}/{n_unique_all}",
+            "unverified_counts": unver_counts_str,
             "precision": headline_precision,
             "precision_ci": list(headline_prec_ci),
             "precision_counts": prec_counts_str,
@@ -863,9 +1029,9 @@ def generate_summary(
         "failed_checks_distribution": failed_checks_counter,
         "breakdowns": {
             "by_magnitude_bucket": magnitude_buckets,
-            "by_kind": by_kind,
-            "by_category": by_category,
-            "by_difficulty": by_difficulty,
+            "by_kind": by_kind_computed,
+            "by_category": by_category_computed,
+            "by_difficulty": by_difficulty_computed,
         },
         "missed_cases": missed_cases,
         "false_alarm_cases": false_alarm_cases,
@@ -897,17 +1063,35 @@ def generate_summary(
     ])
     if len(aggregated_by_model) > 1:
         md_lines.append("> Multiple models were used in this run  \n")
+
+    md_lines.append("")
+    md_lines.append("## Overall Metrics")
+    md_lines.append("")
+    if repeats > 1:
+        md_lines.extend([
+            "| Metric | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+            f"| **Detection Rate** (Sensitivity) | {n_unique_wrong} | {total_w} | {mean_det:.1f} | {headline_det_rate*100:.1f}% | [{headline_det_ci[0]*100:.1f}%, {headline_det_ci[1]*100:.1f}%] |",
+            f"| **Detection for the right reason** | {n_unique_wrong} | {total_w} | {mean_right_reason:.1f} | {headline_right_reason_rate*100:.1f}% | [{headline_right_reason_ci[0]*100:.1f}%, {headline_right_reason_ci[1]*100:.1f}%] |",
+            f"| **False Alarm Rate** (1 - Specificity) | {n_unique_correct} | {total_c} | {mean_fa:.1f} | {headline_fa_rate*100:.1f}% | [{headline_fa_ci[0]*100:.1f}%, {headline_fa_ci[1]*100:.1f}%] |",
+            f"| **Unverified Rate** | {n_unique_all} | {n_finished} | {mean_unver:.1f} | {headline_unver_rate*100:.1f}% | [{headline_unver_ci[0]*100:.1f}%, {headline_unver_ci[1]*100:.1f}%] |",
+            f"| **Precision** | {mean_fail_verdicts:.1f} | {total_flags} | {mean_det:.1f} | {headline_precision*100:.1f}% | [{headline_prec_ci[0]*100:.1f}%, {headline_prec_ci[1]*100:.1f}%] |",
+        ])
+    else:
+        md_lines.extend([
+            "| Metric | Rate | 95% Wilson CI | Counts |",
+            "| :--- | :--- | :--- | :--- |",
+            f"| **Detection Rate** (Sensitivity) | {headline_det_rate*100:.1f}% | [{headline_det_ci[0]*100:.1f}%, {headline_det_ci[1]*100:.1f}%] | {det_counts_str} |",
+            f"| **Detection for the right reason** | {headline_right_reason_rate*100:.1f}% | [{headline_right_reason_ci[0]*100:.1f}%, {headline_right_reason_ci[1]*100:.1f}%] | {right_reason_counts_str} |",
+            f"| **False Alarm Rate** (1 - Specificity) | {headline_fa_rate*100:.1f}% | [{headline_fa_ci[0]*100:.1f}%, {headline_fa_ci[1]*100:.1f}%] | {fa_counts_str} |",
+            f"| **Unverified Rate** | {headline_unver_rate*100:.1f}% | [{headline_unver_ci[0]*100:.1f}%, {headline_unver_ci[1]*100:.1f}%] | {unver_counts_str} |",
+            f"| **Precision** | {headline_precision*100:.1f}% | [{headline_prec_ci[0]*100:.1f}%, {headline_prec_ci[1]*100:.1f}%] | {prec_counts_str} |",
+        ])
+    md_lines.append("")
+    md_lines.append("Intervals treat the benchmark cases (not the repeats) as the sample; repeats only average out LLM randomness.  ")
+    md_lines.append("'By luck' means the reviewer flagged an answer while its own recomputation was also wrong.")
+    md_lines.append("")
     md_lines.extend([
-        "",
-        "## Overall Metrics",
-        "",
-        "| Metric | Rate | 95% Wilson CI | Counts |",
-        "| :--- | :--- | :--- | :--- |",
-        f"| **Detection Rate** (Sensitivity) | {headline_det_rate*100:.1f}% | [{headline_det_ci[0]*100:.1f}%, {headline_det_ci[1]*100:.1f}%] | {det_counts_str} |",
-        f"| **False Alarm Rate** (1 - Specificity) | {headline_fa_rate*100:.1f}% | [{headline_fa_ci[0]*100:.1f}%, {headline_fa_ci[1]*100:.1f}%] | {fa_counts_str} |",
-        f"| **Unverified Rate** | {headline_unver_rate*100:.1f}% | [{headline_unver_ci[0]*100:.1f}%, {headline_unver_ci[1]*100:.1f}%] | {unver_counts_str} |",
-        f"| **Precision** | {headline_precision*100:.1f}% | [{headline_prec_ci[0]*100:.1f}%, {headline_prec_ci[1]*100:.1f}%] | {prec_counts_str} |",
-        "",
         "## Per-Repeat Performance",
         "",
         "| Repeat | Finished Cases | Detection Rate (95% CI) | Detection Counts | False Alarm Rate (95% CI) | False Alarm Counts |",
@@ -970,17 +1154,33 @@ def generate_summary(
     md_lines.extend([
         "## Breakdown by Error Magnitude Bucket",
         "",
-        "| Bucket | Cases | Detected | Missed | Unverified | Detection Rate (95% CI) |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- |",
     ])
-    for b_name in ["subtle", "moderate", "gross", "structural"]:
-        if b_name in magnitude_buckets:
-            b_stats = magnitude_buckets[b_name]
-            md_lines.append(
-                f"| `{b_name}` | {b_stats['count']} | {b_stats['detection']} | "
-                f"{b_stats['missed']} | {b_stats['wrong_unverified']} | "
-                f"{b_stats['detection_rate']*100:.1f}% [{b_stats['detection_rate_ci'][0]*100:.1f}%, {b_stats['detection_rate_ci'][1]*100:.1f}%] |"
-            )
+    if repeats > 1:
+        md_lines.extend([
+            "| Bucket | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+        ])
+        for b_name in ["subtle", "moderate", "gross", "structural"]:
+            if b_name in magnitude_buckets:
+                b_stats = magnitude_buckets[b_name]
+                md_lines.append(
+                    f"| `{b_name}` | {b_stats['unique_cases']} | {b_stats['observations']} | "
+                    f"{b_stats['detected_mean']:.1f} | {b_stats['detection_rate']*100:.1f}% | "
+                    f"[{b_stats['detection_rate_ci'][0]*100:.1f}%, {b_stats['detection_rate_ci'][1]*100:.1f}%] |"
+                )
+    else:
+        md_lines.extend([
+            "| Bucket | Cases | Detected | Missed | Unverified | Detection Rate (95% CI) |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for b_name in ["subtle", "moderate", "gross", "structural"]:
+            if b_name in magnitude_buckets:
+                b_stats = magnitude_buckets[b_name]
+                md_lines.append(
+                    f"| `{b_name}` | {b_stats['count']} | {b_stats['detection']} | "
+                    f"{b_stats['missed']} | {b_stats['wrong_unverified']} | "
+                    f"{b_stats['detection_rate']*100:.1f}% [{b_stats['detection_rate_ci'][0]*100:.1f}%, {b_stats['detection_rate_ci'][1]*100:.1f}%] |"
+                )
     if small_sample_caveats:
         md_lines.append("")
         md_lines.extend(small_sample_caveats)
@@ -990,14 +1190,84 @@ def generate_summary(
     md_lines.extend([
         "## Breakdown by Error Kind",
         "",
-        "| Error Kind | Cases | Detected | Missed | Detection Rate |",
-        "| :--- | :--- | :--- | :--- | :--- |",
     ])
-    for k_name, k_stats in by_kind.items():
-        if k_name != "correct":
+    if repeats > 1:
+        md_lines.extend([
+            "| Error Kind | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+        ])
+        for k_name, k_stats in by_kind_computed.items():
             md_lines.append(
-                f"| `{k_name}` | {k_stats['count']} | {k_stats['detection']} | "
-                f"{k_stats['missed']} | {k_stats['detection_rate']*100:.1f}% |"
+                f"| `{k_name}` | {k_stats['unique_cases']} | {k_stats['observations']} | "
+                f"{k_stats['detected_mean']:.1f} | {k_stats['detection_rate']*100:.1f}% | "
+                f"[{k_stats['detection_rate_ci'][0]*100:.1f}%, {k_stats['detection_rate_ci'][1]*100:.1f}%] |"
+            )
+    else:
+        md_lines.extend([
+            "| Error Kind | Cases | Detected | Missed | Detection Rate |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for k_name, k_stats in by_kind_computed.items():
+            if k_name != "correct":
+                md_lines.append(
+                    f"| `{k_name}` | {k_stats['count']} | {k_stats['detection']} | "
+                    f"{k_stats['missed']} | {k_stats['detection_rate']*100:.1f}% |"
+                )
+    md_lines.append("")
+
+    # Breakdown by Category
+    md_lines.extend([
+        "## Breakdown by Category",
+        "",
+    ])
+    if repeats > 1:
+        md_lines.extend([
+            "| Category | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+        ])
+        for cat, c_stats in sorted(by_category_computed.items()):
+            md_lines.append(
+                f"| `{cat}` | {c_stats['unique_cases']} | {c_stats['observations']} | "
+                f"{c_stats['detected_mean']:.1f} | {c_stats['detection_rate']*100:.1f}% | "
+                f"[{c_stats['detection_rate_ci'][0]*100:.1f}%, {c_stats['detection_rate_ci'][1]*100:.1f}%] |"
+            )
+    else:
+        md_lines.extend([
+            "| Category | Cases | Detected | Missed | Detection Rate |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for cat, c_stats in sorted(by_category_computed.items()):
+            md_lines.append(
+                f"| `{cat}` | {c_stats['count']} | {c_stats['detection']} | "
+                f"{c_stats['missed']} | {c_stats['detection_rate']*100:.1f}% |"
+            )
+    md_lines.append("")
+
+    # Breakdown by Difficulty
+    md_lines.extend([
+        "## Breakdown by Difficulty",
+        "",
+    ])
+    if repeats > 1:
+        md_lines.extend([
+            "| Difficulty | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+        ])
+        for diff, d_stats in sorted(by_difficulty_computed.items()):
+            md_lines.append(
+                f"| `{diff}` | {d_stats['unique_cases']} | {d_stats['observations']} | "
+                f"{d_stats['detected_mean']:.1f} | {d_stats['detection_rate']*100:.1f}% | "
+                f"[{d_stats['detection_rate_ci'][0]*100:.1f}%, {d_stats['detection_rate_ci'][1]*100:.1f}%] |"
+            )
+    else:
+        md_lines.extend([
+            "| Difficulty | Cases | Detected | Missed | Detection Rate |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for diff, d_stats in sorted(by_difficulty_computed.items()):
+            md_lines.append(
+                f"| `{diff}` | {d_stats['count']} | {d_stats['detection']} | "
+                f"{d_stats['missed']} | {d_stats['detection_rate']*100:.1f}% |"
             )
     md_lines.append("")
 
@@ -1070,6 +1340,7 @@ def generate_summary(
     print("=" * 80)
     print(f"Total Cases:     {n_finished} (Unique: {n_unique_all}, Correct: {total_c}, Wrong: {total_w}, Errors: {errors_count})")
     print(f"Detection Rate:  {headline_det_rate*100:.1f}% ({det_counts_str}) [95% CI: {headline_det_ci[0]*100:.1f}% - {headline_det_ci[1]*100:.1f}%]")
+    print(f"Right Reason:    {headline_right_reason_rate*100:.1f}% ({right_reason_counts_str}) [95% CI: {headline_right_reason_ci[0]*100:.1f}% - {headline_right_reason_ci[1]*100:.1f}%]")
     print(f"False Alarm Rate:{headline_fa_rate*100:.1f}% ({fa_counts_str}) [95% CI: {headline_fa_ci[0]*100:.1f}% - {headline_fa_ci[1]*100:.1f}%]")
     print(f"Unverified Rate: {headline_unver_rate*100:.1f}% [95% CI: {headline_unver_ci[0]*100:.1f}% - {headline_unver_ci[1]*100:.1f}%]")
     print(f"Precision:       {headline_precision*100:.1f}% [95% CI: {headline_prec_ci[0]*100:.1f}% - {headline_prec_ci[1]*100:.1f}%]")

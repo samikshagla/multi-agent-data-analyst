@@ -857,3 +857,128 @@ def test_summarize_only_cli_execution(tmp_path: Path, monkeypatch: pytest.Monkey
     assert (tmp_path / "summary.md").exists()
     assert (tmp_path / "summary.json").exists()
 
+
+# ============================================================================
+# Step 7: Tests for wilson_ci_from_rate and multi-repeat unique cases statistics
+# ============================================================================
+
+def test_wilson_ci_from_rate_tolerances_and_zero():
+    """
+    Verifies:
+    - wilson_ci_from_rate(0.9875, 40) is about [0.89, 0.998] (tol 0.01)
+    - wilson_ci_from_rate(0.025, 20) is about [0.003, 0.20] (tol 0.01)
+    - Integer rates equal old integer-count intervals
+    - n = 0 does not crash
+    """
+    from eval.metrics import wilson_ci, wilson_ci_from_rate
+
+    # 1. Tolerances
+    low1, high1 = wilson_ci_from_rate(0.9875, 40)
+    assert low1 == pytest.approx(0.89, abs=0.01)
+    assert high1 == pytest.approx(0.998, abs=0.01)
+
+    low2, high2 = wilson_ci_from_rate(0.025, 20)
+    assert low2 == pytest.approx(0.003, abs=0.01)
+    assert high2 == pytest.approx(0.20, abs=0.01)
+
+    # 2. Integer rates equal old integer-count intervals
+    for k, n in [(0, 10), (1, 10), (5, 10), (8, 10), (10, 10), (16, 20), (39, 40), (40, 40)]:
+        r = float(k) / float(n)
+        ci_rate = wilson_ci_from_rate(r, n)
+        ci_old = wilson_ci(k, n)
+        assert ci_rate[0] == pytest.approx(ci_old[0], abs=1e-7)
+        assert ci_rate[1] == pytest.approx(ci_old[1], abs=1e-7)
+
+    # 3. n = 0 safe return (no crash)
+    assert wilson_ci_from_rate(0.5, 0) == (0.0, 0.0)
+    assert wilson_ci_from_rate(0.0, 0) == (0.0, 0.0)
+    assert wilson_ci_from_rate(1.0, 0) == (0.0, 0.0)
+    assert wilson_ci_from_rate(0.5, -5) == (0.0, 0.0)
+
+
+def test_repeats_subtle_cases_unique_observations_caveat_and_right_reason(tmp_path: Path):
+    """
+    Verifies with a hand-made list with 6 unique subtle cases and 2 repeats:
+    - Table shows Unique cases = 6, Observations = 12
+    - Small-sample caveat is triggered (n=6 < 10)
+    - Right-reason rate is correctly computed
+    - Explanatory notes under overall table are present
+    """
+    from eval.metrics import wilson_ci_from_rate
+    from eval.run_reviewer_eval import generate_summary
+
+    records = []
+    # 6 unique cases: items 1..6
+    # Repeat 1:
+    # 5 detected (fail), 1 missed (pass)
+    # Among the 5 detected: 4 recompute correct (True), 1 wrong (False)
+    # -> det_rate = 5/6, right_reason_rate = 4/6
+    r1_verdicts = ["fail", "fail", "fail", "fail", "fail", "pass"]
+    r1_recomp = [True, True, True, True, False, True]
+    for i in range(1, 7):
+        records.append({
+            "case_id": f"q{i:02d}_v1_r1",
+            "item_id": i,
+            "repeat_index": 0,
+            "is_wrong": True,
+            "kind": "wrong_aggregation",
+            "category": "simple aggregation",
+            "difficulty": "easy",
+            "magnitude_bucket": "subtle",
+            "verdict": r1_verdicts[i - 1],
+            "recomputed_result_correct": r1_recomp[i - 1],
+        })
+
+    # Repeat 2:
+    # 4 detected (fail), 2 missed (pass)
+    # Among the 4 detected: 3 recompute correct (True), 1 wrong (False)
+    # -> det_rate = 4/6, right_reason_rate = 3/6
+    r2_verdicts = ["fail", "fail", "fail", "fail", "pass", "pass"]
+    r2_recomp = [True, True, True, False, True, False]
+    for i in range(1, 7):
+        records.append({
+            "case_id": f"q{i:02d}_v1_r2",
+            "item_id": i,
+            "repeat_index": 1,
+            "is_wrong": True,
+            "kind": "wrong_aggregation",
+            "category": "simple aggregation",
+            "difficulty": "easy",
+            "magnitude_bucket": "subtle",
+            "verdict": r2_verdicts[i - 1],
+            "recomputed_result_correct": r2_recomp[i - 1],
+        })
+
+    summary = generate_summary(records, tmp_path, repeats=2, expected_total=12)
+
+    # 1. Subtle bucket metrics: Unique cases = 6, Observations = 12
+    subtle_data = summary["breakdowns"]["by_magnitude_bucket"]["subtle"]
+    assert subtle_data["unique_cases"] == 6
+    assert subtle_data["observations"] == 12
+
+    # Small sample caveat triggered (n=6 < 10)
+    assert "small sample (n=6), interpret with care" in subtle_data["caveat"]
+
+    # 2. Right-reason rate calculation
+    # r1: 4/6 = 0.6667, r2: 3/6 = 0.5000 -> mean = 7/12 = 0.5833
+    expected_rr_rate = (4 / 6 + 3 / 6) / 2
+    assert summary["overall"]["right_reason_rate"] == pytest.approx(expected_rr_rate)
+    expected_rr_ci = wilson_ci_from_rate(expected_rr_rate, 6)
+    assert summary["overall"]["right_reason_rate_ci"] == pytest.approx(list(expected_rr_ci))
+
+    # 3. Markdown summary content checks
+    md_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
+
+    # Table columns with repeats > 1
+    assert "| Metric | Unique cases | Observations | Detected (mean per repeat) | Detection rate (mean over repeats) | 95% Wilson CI |" in md_text
+    assert "Detection for the right reason" in md_text
+
+    # Explanatory lines under overall table
+    assert "Intervals treat the benchmark cases (not the repeats) as the sample; repeats only average out LLM randomness." in md_text
+    assert "'By luck' means the reviewer flagged an answer while its own recomputation was also wrong." in md_text
+
+    # Magnitude bucket table shows Unique cases = 6, Observations = 12, and small-sample caveat
+    assert "| `subtle` | 6 | 12 |" in md_text
+    assert "small sample (n=6), interpret with care" in md_text
+
+
