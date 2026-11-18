@@ -228,8 +228,11 @@ def test_attack_ast_node_count_too_large(df):
 def test_attack_memory_bomb(df):
     code = "result = np.ones(10**10)"
     res = run_code(code, df)
-    assert res["status"] == "error"
-    assert "Memory" in res["error"] or "unable to allocate" in res["error"].lower()
+    assert res["status"] in ("error", "blocked")
+    if res["status"] == "error":
+        assert "Memory" in res["error"] or "unable to allocate" in res["error"].lower()
+    else:
+        assert "not allowed" in res["error"]
 
 
 # 14. Verified Legal Patterns (Must Pass with status 'ok')
@@ -341,4 +344,163 @@ def test_reviewer_snippet_query_weather_condition_mean():
     res = run_code(code, df_sample)
     assert res["status"] == "ok"
     assert abs(res["result"] - 32.0) < 1e-5
+
+
+# ============================================================================
+# 16. Round 2 Red-Team Attacks
+# ============================================================================
+
+# a) String dispatch of blocked methods
+@pytest.mark.parametrize("dispatch_code", [
+    "result = df.agg('to_csv')",
+    "result = df.agg('to_pickle')",
+    "result = df.apply('to_json')",
+    "result = df.transform('to_csv')",
+    "result = df['a'].agg('to_csv')",
+    "result = df.groupby('a').agg('to_csv')",
+    "result = df.groupby('a').apply('to_csv')",
+    "result = df.map('to_csv')",
+    "result = df.agg(['to_csv'])",
+    "result = df.agg({'a': 'to_csv'})",
+    "result = df.apply(getattr)",
+    "result = df.apply(type)",
+    "result = df.apply(dir)",
+    "result = df.apply(vars)",
+    "result = df.apply(print)",
+    "result = df.applymap(print)",
+])
+def test_attack_r2_string_dispatch(df, dispatch_code):
+    res = run_code(dispatch_code, df)
+    assert res["status"] == "blocked", f"String dispatch succeeded: status={res['status']}, err={res['error']}"
+
+
+# b) Dynamic format strings
+def test_attack_r2_dynamic_format_concat(df):
+    code = "result = ('{0._' + '_class__}').format(df)"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Concat format succeeded: status={res['status']}, res={res['result']}"
+
+
+def test_attack_r2_dynamic_format_join(df):
+    code = "result = ''.join(['{0._', '_class__}']).format(df)"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Join format succeeded: status={res['status']}, res={res['result']}"
+
+
+def test_attack_r2_format_attribute_receiver(df):
+    code = "result = '{0.T}'.format(df)"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Format attribute receiver succeeded: status={res['status']}, res={res['result']}"
+
+
+def test_attack_r2_format_item_receiver(df):
+    code = "result = '{0[0]}'.format(df)"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Format item receiver succeeded: status={res['status']}, res={res['result']}"
+
+
+def test_attack_r2_format_via_variable(df):
+    code = "fmt = '{0.__class__}'; result = fmt.format(df)"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Format via variable succeeded: status={res['status']}, res={res['result']}"
+
+
+# c) Non-allowlisted pd.* and np.* names
+@pytest.mark.parametrize("non_allowlist_code", [
+    "rc = pd.read_csv\nresult = 1",
+    "result = pd.show_versions",
+    "result = pd.eval('1+1')",
+    "result = pd.options",
+    "result = pd.set_option",
+    "result = pd.get_option",
+    "result = pd.option_context",
+    "result = pd.io",
+    "result = np.DataSource",
+    "result = np.f2py",
+    "result = np.distutils",
+    "result = np.show_config",
+    "result = np.info",
+    "result = np.source",
+    "result = np.lookfor",
+    "result = np.who",
+    "result = np.test",
+    "result = np.core",
+    "result = np._core",
+    "result = np.random.default_rng().bytes(10**9)",
+    "result = np.zeros(10**10)",
+])
+def test_attack_r2_non_allowlist_pd_np(df, non_allowlist_code):
+    res = run_code(non_allowlist_code, df)
+    assert res["status"] == "blocked", f"Non-allowlist access succeeded: status={res['status']}, err={res['error']}"
+
+
+# d) Python object tricks without underscores or denylisted names
+@pytest.mark.parametrize("mro_attr", [
+    "str.mro",
+    "int.mro",
+    "df.mro",
+    "df.subclasses",
+    "df.bases",
+    "df.func",
+    "df.code",
+    "df.gi_frame",
+    "df.cr_frame",
+    "df.tb_frame",
+    "df.f_globals",
+    "df.f_locals",
+    "df.f_back",
+    "df.co_code",
+])
+def test_attack_r2_object_tricks_attrs(df, mro_attr):
+    code = f"result = str({mro_attr})"
+    res = run_code(code, df)
+    assert res["status"] == "blocked", f"Attribute '{mro_attr}' succeeded: status={res['status']}"
+
+
+# e) Resource attacks
+def test_attack_r2_listcomp_billion(df):
+    code = "result = [x for x in range(10**9)]"
+    res = run_code(code, df, timeout=2)
+    assert res["status"] in ("timeout", "error", "blocked") and res["status"] != "ok"
+
+
+def test_attack_r2_string_mult_ten_billion(df):
+    code = "result = 'a' * (10**10)"
+    res = run_code(code, df, timeout=2)
+    assert res["status"] in ("error", "timeout", "blocked") and res["status"] != "ok"
+
+
+def test_attack_r2_deep_recursion_lambda(df):
+    code = """
+f = (lambda g: lambda n: g(g)(n))(lambda g: lambda n: g(g)(n))
+result = f(1)
+"""
+    res = run_code(code, df, timeout=2)
+    assert res["status"] in ("error", "timeout", "blocked") and res["status"] != "ok"
+
+
+def test_attack_r2_huge_power(df):
+    code = "result = 2 ** (10**7)"
+    res = run_code(code, df, timeout=2)
+    assert res["status"] in ("error", "timeout", "blocked") and res["status"] != "ok"
+
+
+# f) Output attacks
+def test_attack_r2_output_string_100mb(df):
+    code = "result = 'x' * (10**8)"
+    res = run_code(code, df)
+    assert res["status"] != "ok", "100 MB string output was not rejected"
+
+
+def test_attack_r2_output_huge_list(df):
+    code = "result = list(range(10**7))"
+    res = run_code(code, df)
+    assert res["status"] != "ok", "Huge list output was not rejected"
+
+
+def test_attack_r2_output_dict_huge_list(df):
+    code = "result = {'a': list(range(10**7))}"
+    res = run_code(code, df)
+    assert res["status"] != "ok", "Dict with huge list was not rejected"
+
 

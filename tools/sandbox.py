@@ -4,12 +4,23 @@ Code Execution Sandbox: Safely runs LLM-generated pandas code within an isolated
 multiprocessing sandbox with AST static checks, restricted builtins, execution timeouts,
 and protected original datasets.
 
-SECURITY NOTE:
-This execution sandbox is a best-effort defense-in-depth layer that reduces risk
-for local development and interactive demos. It is NOT an impenetrable security boundary.
-Running arbitrary untrusted or LLM-generated code in a production or public environment requires
-true operating-system isolation (e.g. an isolated container or microVM with a read-only
-filesystem, unprivileged user, and disabled network access).
+KNOWN LIMITATIONS & SECURITY NOTE:
+1. Best-Effort Defense-in-Depth:
+   This sandbox layer is a best-effort defense-in-depth mechanism that reduces risk
+   for local development, interactive demos, and evaluation. It is NOT an impenetrable
+   operating-system security boundary. Running arbitrary untrusted code on a public
+   or production server requires kernel-level isolation (e.g. gVisor, Firecracker microVM,
+   or unprivileged OCI containers with read-only root filesystems and disabled network access).
+2. Column Access via Subscripting:
+   DataFrame columns whose names contain '__' or equal denylisted attribute names (e.g.
+   'mro', 'code', 'func', 'values', 'pipe', 'style', 'plot') cannot be accessed via
+   attribute notation (e.g. `df.mro`). They must be accessed using standard bracket
+   subscript notation (e.g. `df['mro']` or `df['__id']`).
+3. Platform-Specific Resource Limits:
+   On Windows platforms, the POSIX `resource` module is unavailable, so kernel-level memory
+   limits (RLIMIT_AS) cannot be enforced. Protection against excessive memory consumption
+   on Windows relies on subprocess timeout enforcement (wall-clock termination) and post-execution
+   result size / type inspection.
 """
 
 import ast
@@ -18,6 +29,7 @@ import os
 import pickle
 import re
 import shutil
+import string
 import sys
 import tempfile
 from typing import Any
@@ -106,6 +118,252 @@ DENYLIST_ATTRS = {
     "memmap",
     "ctypeslib",
     "lib",
+    # Python object reflection, frames, and bytecode inspection
+    "mro",
+    "subclasses",
+    "bases",
+    "func",
+    "code",
+    "gi_frame",
+    "gi_code",
+    "cr_frame",
+    "cr_code",
+    "tb_frame",
+    "tb_next",
+    "f_globals",
+    "f_locals",
+    "f_back",
+    "f_code",
+    "f_builtins",
+    "co_code",
+    "co_consts",
+    "im_func",
+    "im_self",
+    "ag_frame",
+}
+
+# Top-level allowlist for pandas (pd.* and pandas.*)
+PD_ALLOWLIST = {
+    "DataFrame",
+    "Series",
+    "Index",
+    "MultiIndex",
+    "Categorical",
+    "CategoricalDtype",
+    "Timestamp",
+    "Timedelta",
+    "Period",
+    "Interval",
+    "IntervalIndex",
+    "DatetimeIndex",
+    "PeriodIndex",
+    "TimedeltaIndex",
+    "NaT",
+    "NA",
+    "concat",
+    "merge",
+    "merge_asof",
+    "crosstab",
+    "pivot",
+    "pivot_table",
+    "melt",
+    "get_dummies",
+    "cut",
+    "qcut",
+    "to_datetime",
+    "to_numeric",
+    "to_timedelta",
+    "isna",
+    "isnull",
+    "notna",
+    "notnull",
+    "unique",
+    "value_counts",
+    "factorize",
+    "date_range",
+    "period_range",
+    "timedelta_range",
+    "interval_range",
+    "Grouper",
+    "NamedAgg",
+    "array",
+    "api",
+    "IndexSlice",
+}
+
+# pd.api.types allowlist
+PD_API_TYPES_ALLOWLIST = {
+    "is_numeric_dtype",
+    "is_string_dtype",
+    "is_datetime64_any_dtype",
+    "is_categorical_dtype",
+    "is_bool_dtype",
+    "is_integer_dtype",
+    "is_float_dtype",
+    "is_object_dtype",
+    "is_period_dtype",
+    "is_timedelta64_dtype",
+}
+
+# Top-level allowlist for numpy (np.* and numpy.*)
+NP_ALLOWLIST = {
+    "nan",
+    "inf",
+    "pi",
+    "e",
+    "newaxis",
+    "where",
+    "select",
+    "mean",
+    "median",
+    "std",
+    "var",
+    "sum",
+    "prod",
+    "min",
+    "max",
+    "argmin",
+    "argmax",
+    "percentile",
+    "quantile",
+    "round",
+    "around",
+    "floor",
+    "ceil",
+    "abs",
+    "absolute",
+    "sqrt",
+    "square",
+    "exp",
+    "log",
+    "log10",
+    "log2",
+    "power",
+    "clip",
+    "cumsum",
+    "cumprod",
+    "diff",
+    "unique",
+    "sort",
+    "argsort",
+    "array",
+    "asarray",
+    "arange",
+    "linspace",
+    "zeros_like",
+    "ones_like",
+    "isnan",
+    "isinf",
+    "isfinite",
+    "isin",
+    "any",
+    "all",
+    "count_nonzero",
+    "corrcoef",
+    "cov",
+    "average",
+    "ptp",
+    "nansum",
+    "nanmean",
+    "nanmedian",
+    "nanstd",
+    "nanvar",
+    "nanmin",
+    "nanmax",
+    "nanpercentile",
+    "nanquantile",
+    "searchsorted",
+    "digitize",
+    "histogram",
+    "bincount",
+    "maximum",
+    "minimum",
+    "sign",
+    "mod",
+    "floor_divide",
+    "true_divide",
+    "divide",
+    "multiply",
+    "add",
+    "subtract",
+    "negative",
+    "float64",
+    "float32",
+    "int64",
+    "int32",
+    "bool_",
+    "datetime64",
+    "timedelta64",
+    "number",
+    "integer",
+    "floating",
+    "ndarray",
+}
+
+# Aggregation names allowed in string dispatch (.agg, .apply, .transform, etc.)
+AGG_ALLOWLIST = {
+    "sum",
+    "mean",
+    "median",
+    "min",
+    "max",
+    "count",
+    "std",
+    "var",
+    "size",
+    "first",
+    "last",
+    "nunique",
+    "prod",
+    "sem",
+    "skew",
+    "kurt",
+    "idxmin",
+    "idxmax",
+    "cumsum",
+    "cumprod",
+    "cummax",
+    "cummin",
+    "rank",
+    "diff",
+    "pct_change",
+    "abs",
+    "round",
+    "quantile",
+    "mode",
+    "any",
+    "all",
+    "head",
+    "tail",
+}
+
+# Callable names allowed as arguments in dispatch methods
+CALLABLE_ALLOWLIST = {
+    "len",
+    "sum",
+    "min",
+    "max",
+    "abs",
+    "round",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "set",
+    "tuple",
+    "sorted",
+}
+
+# Method names subjected to string/callable dispatch validation
+DISPATCH_METHODS = {
+    "agg",
+    "aggregate",
+    "apply",
+    "transform",
+    "map",
+    "applymap",
+    "pipe",
 }
 
 # Restricted builtins exposed inside the sandbox exec environment
@@ -131,6 +389,40 @@ ALLOWED_BUILTINS = {
     "isinstance": isinstance,
     "print": print,
 }
+
+
+def _check_dispatch_arg(target: ast.AST) -> tuple[bool, str | None]:
+    """Validates an argument passed to a dispatch method (.agg, .apply, .transform, etc.)."""
+    if isinstance(target, ast.Constant):
+        if isinstance(target.value, str):
+            if target.value not in AGG_ALLOWLIST:
+                return False, f"function name '{target.value}' is not allowed"
+        return True, None
+    elif isinstance(target, (ast.List, ast.Tuple)):
+        for elt in target.elts:
+            ok, msg = _check_dispatch_arg(elt)
+            if not ok:
+                return False, msg
+        return True, None
+    elif isinstance(target, ast.Dict):
+        for val in target.values:
+            ok, msg = _check_dispatch_arg(val)
+            if not ok:
+                return False, msg
+        return True, None
+    elif isinstance(target, ast.Name):
+        if target.id not in CALLABLE_ALLOWLIST:
+            return False, f"function name '{target.id}' is not allowed"
+        return True, None
+    elif isinstance(target, ast.Lambda):
+        return True, None
+    elif isinstance(target, ast.Attribute):
+        # Attribute callable: must be an allowed numpy function (e.g. np.mean)
+        if isinstance(target.value, ast.Name) and target.value.id in ("np", "numpy") and target.attr in NP_ALLOWLIST:
+            return True, None
+        return False, f"function name '{target.attr}' is not allowed"
+    else:
+        return False, "Disallowed argument in dispatch call."
 
 
 def _get_max_depth(tree: ast.AST) -> int:
@@ -240,9 +532,19 @@ def _validate_code_ast(code: str) -> tuple[bool, str | None, str]:
             if node.attr.startswith("read_"):
                 return False, f"Attribute '{node.attr}' is not allowed.", "blocked"
 
-            # Block denylisted attributes (writers, system modules, internals)
+            # Block denylisted attributes (writers, system modules, internals, frame tricks)
             if node.attr in DENYLIST_ATTRS:
                 return False, f"Attribute '{node.attr}' is not allowed.", "blocked"
+
+            # Top-level namespace allowlist for pd / pandas
+            if isinstance(node.value, ast.Name) and node.value.id in ("pd", "pandas"):
+                if node.attr not in PD_ALLOWLIST:
+                    return False, f"Attribute 'pd.{node.attr}' is not allowed.", "blocked"
+
+            # Top-level namespace allowlist for np / numpy
+            if isinstance(node.value, ast.Name) and node.value.id in ("np", "numpy"):
+                if node.attr not in NP_ALLOWLIST:
+                    return False, f"Attribute 'np.{node.attr}' is not allowed.", "blocked"
 
             # Allow pd.api.types only (block pd.api.extensions and any other access under pd.api)
             if node.attr == "api":
@@ -258,8 +560,42 @@ def _validate_code_ast(code: str) -> tuple[bool, str | None, str]:
                         "blocked",
                     )
 
-        # 4f. Call checks (including .query() and .eval() arguments)
+            # pd.api.types.* allowlist
+            if (
+                isinstance(node.value, ast.Attribute)
+                and node.value.attr == "types"
+                and isinstance(getattr(node.value, "value", None), ast.Attribute)
+                and node.value.value.attr == "api"
+            ):
+                if node.attr not in PD_API_TYPES_ALLOWLIST:
+                    return (
+                        False,
+                        f"Attribute 'pd.api.types.{node.attr}' is not allowed.",
+                        "blocked",
+                    )
+
+        # 4f. Call checks (including .query(), .eval(), .format(), and string dispatch)
         elif isinstance(node, ast.Call):
+            # Format string checks: .format() and .format_map()
+            if isinstance(node.func, ast.Attribute) and node.func.attr in ("format", "format_map"):
+                # Must be a plain string literal receiver (blocks dynamic strings, variables, joins, concats)
+                if not (isinstance(node.func.value, ast.Constant) and isinstance(node.func.value.value, str)):
+                    return False, f"Calls to .{node.func.attr}() require a plain string literal receiver.", "blocked"
+
+                fmt_str = node.func.value.value
+                try:
+                    formatter = string.Formatter()
+                    for literal_text, field_name, format_spec, conversion in formatter.parse(fmt_str):
+                        if field_name is not None:
+                            if "." in field_name or "[" in field_name:
+                                return (
+                                    False,
+                                    f"Replacement field '{field_name}' in format string is not allowed.",
+                                    "blocked",
+                                )
+                except ValueError as e:
+                    return False, f"Invalid format string: {e}", "blocked"
+
             # Function name is a plain Name
             if isinstance(node.func, ast.Name):
                 if node.func.id in DENYLIST_NAMES or node.func.id.startswith("__"):
@@ -270,6 +606,28 @@ def _validate_code_ast(code: str) -> tuple[bool, str | None, str]:
                 attr_name = node.func.attr
                 if attr_name in DENYLIST_NAMES or attr_name in DENYLIST_ATTRS or attr_name.startswith("_"):
                     return False, f"Call to '{attr_name}' is blocked.", "blocked"
+
+                # Check string / callable dispatch methods (.agg, .apply, .transform, .map, .applymap, .pipe)
+                if attr_name in DISPATCH_METHODS:
+                    if node.args:
+                        ok, msg = _check_dispatch_arg(node.args[0])
+                        if not ok:
+                            return False, msg, "blocked"
+                        for arg in node.args[1:]:
+                            if isinstance(arg, (ast.Constant, ast.Name, ast.List, ast.Tuple, ast.Dict)):
+                                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                    if arg.value not in AGG_ALLOWLIST:
+                                        return False, f"function name '{arg.value}' is not allowed", "blocked"
+
+                    for kw in node.keywords:
+                        if kw.arg in ("func", "f", "mapper", "arg"):
+                            ok, msg = _check_dispatch_arg(kw.value)
+                            if not ok:
+                                return False, msg, "blocked"
+                        elif isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                            if kw.arg not in ("axis", "na_action", "raw", "result_type", "engine", "engine_kwargs"):
+                                if kw.value.value not in AGG_ALLOWLIST:
+                                    return False, f"function name '{kw.value.value}' is not allowed", "blocked"
 
                 # Guard for .query(...) and .eval(...)
                 if attr_name in ("query", "eval"):
@@ -492,6 +850,45 @@ def _sandbox_worker(conn: Any, code: str, df: pd.DataFrame, timeout: int = 10) -
                 "status": "error",
                 "result": None,
                 "error": "result must be ONE DataFrame, Series, or a single number, not a tuple/list. Combine the answer into a single table.",
+            })
+            return
+
+        # Validate result type: must be DataFrame, Series, scalar, or numpy scalar
+        allowed_scalar_types = (
+            int,
+            float,
+            bool,
+            str,
+            np.number,
+            np.bool_,
+            pd.Timestamp,
+            pd.Timedelta,
+            pd.Interval,
+            pd.Period,
+        )
+        if not isinstance(raw_result, (pd.DataFrame, pd.Series, allowed_scalar_types)) and raw_result is not None:
+            conn.send({
+                "status": "error",
+                "result": None,
+                "error": f"Result must be a DataFrame, Series, or scalar, not {type(raw_result).__name__}.",
+            })
+            return
+
+        # Scalar string length limit (10,000 characters)
+        if isinstance(raw_result, str) and len(raw_result) > 10_000:
+            conn.send({
+                "status": "error",
+                "result": None,
+                "error": f"Result string exceeds maximum allowed length ({len(raw_result):,} characters > 10,000 character limit).",
+            })
+            return
+
+        # Scalar integer bit length limit (10,000 bits) to prevent DoS from huge powers (e.g. 2**10**7)
+        if isinstance(raw_result, int) and not isinstance(raw_result, bool) and raw_result.bit_length() > 10_000:
+            conn.send({
+                "status": "error",
+                "result": None,
+                "error": f"Result integer exceeds maximum allowed size ({raw_result.bit_length():,} bits > 10,000 bit limit).",
             })
             return
 
