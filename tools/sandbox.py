@@ -791,7 +791,7 @@ def _sandbox_worker(conn: Any, code: str, df: pd.DataFrame, timeout: int = 10) -
         temp_dir = tempfile.mkdtemp(prefix="sandbox_")
         os.chdir(temp_dir)
 
-        # Step C: On POSIX systems, apply strict resource constraints
+        # Step C: On POSIX systems, apply strict resource constraints (after pandas/numpy import)
         if sys.platform != "win32":
             try:
                 import resource
@@ -805,11 +805,6 @@ def _sandbox_worker(conn: Any, code: str, df: pd.DataFrame, timeout: int = 10) -
                 resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
                 # File size limit: 0 (prevents writing files to disk)
                 resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
-                # Process limit: 1
-                try:
-                    resource.setrlimit(resource.RLIMIT_NPROC, (1, 1))
-                except Exception:
-                    pass
             except (ImportError, AttributeError, ValueError, OSError):
                 pass
 
@@ -977,6 +972,13 @@ def run_code(code: str, df: pd.DataFrame, timeout: int = 10) -> dict[str, Any]:
         }
 
     # Step 2: Separate process execution using explicit 'spawn' start method
+    # Set single-threaded execution for BLAS/OpenMP libraries to prevent thread exhaustion under POSIX limits
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe()
     process = ctx.Process(

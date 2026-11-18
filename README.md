@@ -1,5 +1,7 @@
 # Multi-Agent Data Analyst
 
+[![Tests](https://github.com/samikshagla/multi-agent-data-analyst/actions/workflows/tests.yml/badge.svg)](https://github.com/samikshagla/multi-agent-data-analyst/actions/workflows/tests.yml)
+
 I built this project to analyze tabular datasets by coordinating four specialized agents. You upload a CSV, and the agents profile and clean the data, formulate business questions, write and execute pandas code, build interactive Plotly charts, and independently recheck the computed results before producing a final report.
 
 **Tech stack**: Python, LangGraph, pandas, Plotly, Streamlit, and Groq with `openai/gpt-oss-120b` (Google Gemini is also supported via `llm.py`).
