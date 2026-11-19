@@ -1,0 +1,1661 @@
+{
+  "meta": {
+    "schema_version": 1,
+    "recorded_at": "2026-11-19T04:49:41.078385+00:00",
+    "models_used": [
+      "openai/gpt-oss-120b"
+    ],
+    "git_commit": "655198c",
+    "dataset_name": "sample.csv",
+    "raw_rows": 8000,
+    "raw_cols": 26,
+    "clean_rows": 8000,
+    "clean_cols": 26,
+    "tokens": 21633,
+    "llm_calls": 21,
+    "seconds": 105.18,
+    "retries_used": 0
+  },
+  "steps": [
+    {
+      "node_name": "cleaner",
+      "seconds": 5.05,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+          "timestamp": "2026-11-19T04:48:00.567367+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_id' to lower",
+          "timestamp": "2026-11-19T04:48:00.570374+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'metro_city' to title",
+          "timestamp": "2026-11-19T04:48:00.573468+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'cuisine_category' to title",
+          "timestamp": "2026-11-19T04:48:00.575423+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_channel' to title",
+          "timestamp": "2026-11-19T04:48:00.577458+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'restaurant_price_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.579453+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'weather_condition' to title",
+          "timestamp": "2026-11-19T04:48:00.581455+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_spending_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.583460+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_satisfaction_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.585373+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'primary_satisfaction_driver' to title",
+          "timestamp": "2026-11-19T04:48:00.588368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'metro_city' to category",
+          "timestamp": "2026-11-19T04:48:00.596422+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'cuisine_category' to category",
+          "timestamp": "2026-11-19T04:48:00.598368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'order_channel' to category",
+          "timestamp": "2026-11-19T04:48:00.599368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'restaurant_price_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.600369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'weather_condition' to category",
+          "timestamp": "2026-11-19T04:48:00.601369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_spending_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.602370+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_satisfaction_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.603378+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'primary_satisfaction_driver' to category",
+          "timestamp": "2026-11-19T04:48:00.605368+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "analyst",
+      "seconds": 57.29,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+          "timestamp": "2026-11-19T04:48:00.567367+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_id' to lower",
+          "timestamp": "2026-11-19T04:48:00.570374+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'metro_city' to title",
+          "timestamp": "2026-11-19T04:48:00.573468+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'cuisine_category' to title",
+          "timestamp": "2026-11-19T04:48:00.575423+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_channel' to title",
+          "timestamp": "2026-11-19T04:48:00.577458+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'restaurant_price_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.579453+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'weather_condition' to title",
+          "timestamp": "2026-11-19T04:48:00.581455+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_spending_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.583460+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_satisfaction_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.585373+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'primary_satisfaction_driver' to title",
+          "timestamp": "2026-11-19T04:48:00.588368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'metro_city' to category",
+          "timestamp": "2026-11-19T04:48:00.596422+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'cuisine_category' to category",
+          "timestamp": "2026-11-19T04:48:00.598368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'order_channel' to category",
+          "timestamp": "2026-11-19T04:48:00.599368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'restaurant_price_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.600369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'weather_condition' to category",
+          "timestamp": "2026-11-19T04:48:00.601369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_spending_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.602370+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_satisfaction_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.603378+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'primary_satisfaction_driver' to category",
+          "timestamp": "2026-11-19T04:48:00.605368+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Generated 5 analytical business questions.",
+          "timestamp": "2026-11-19T04:48:31.255418+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 1/5 ('What is the average order_value_usd for each metro_city?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:38.083740+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 2/5 ('Which cuisine_category has the highest average customer_rating?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:41.924257+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 3/5 ('How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:45.898339+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 4/5 ('What is the total discount_applied_usd for each restaurant_price_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:49.361746+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 5/5 ('Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:53.130417+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0,
+      "analysis_results": [
+        {
+          "status": "ok"
+        },
+        {
+          "status": "ok"
+        },
+        {
+          "status": "ok"
+        },
+        {
+          "status": "ok"
+        },
+        {
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "node_name": "visualizer",
+      "seconds": 66.93,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+          "timestamp": "2026-11-19T04:48:00.567367+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_id' to lower",
+          "timestamp": "2026-11-19T04:48:00.570374+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'metro_city' to title",
+          "timestamp": "2026-11-19T04:48:00.573468+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'cuisine_category' to title",
+          "timestamp": "2026-11-19T04:48:00.575423+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_channel' to title",
+          "timestamp": "2026-11-19T04:48:00.577458+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'restaurant_price_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.579453+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'weather_condition' to title",
+          "timestamp": "2026-11-19T04:48:00.581455+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_spending_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.583460+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_satisfaction_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.585373+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'primary_satisfaction_driver' to title",
+          "timestamp": "2026-11-19T04:48:00.588368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'metro_city' to category",
+          "timestamp": "2026-11-19T04:48:00.596422+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'cuisine_category' to category",
+          "timestamp": "2026-11-19T04:48:00.598368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'order_channel' to category",
+          "timestamp": "2026-11-19T04:48:00.599368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'restaurant_price_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.600369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'weather_condition' to category",
+          "timestamp": "2026-11-19T04:48:00.601369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_spending_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.602370+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_satisfaction_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.603378+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'primary_satisfaction_driver' to category",
+          "timestamp": "2026-11-19T04:48:00.605368+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Generated 5 analytical business questions.",
+          "timestamp": "2026-11-19T04:48:31.255418+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 1/5 ('What is the average order_value_usd for each metro_city?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:38.083740+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 2/5 ('Which cuisine_category has the highest average customer_rating?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:41.924257+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 3/5 ('How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:45.898339+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 4/5 ('What is the total discount_applied_usd for each restaurant_price_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:49.361746+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 5/5 ('Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:53.130417+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 0.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 1.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 2.",
+          "timestamp": "2026-11-19T04:48:56.491179+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 3.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 4.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "reviewer",
+      "seconds": 98.83,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+          "timestamp": "2026-11-19T04:48:00.567367+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_id' to lower",
+          "timestamp": "2026-11-19T04:48:00.570374+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'metro_city' to title",
+          "timestamp": "2026-11-19T04:48:00.573468+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'cuisine_category' to title",
+          "timestamp": "2026-11-19T04:48:00.575423+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_channel' to title",
+          "timestamp": "2026-11-19T04:48:00.577458+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'restaurant_price_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.579453+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'weather_condition' to title",
+          "timestamp": "2026-11-19T04:48:00.581455+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_spending_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.583460+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_satisfaction_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.585373+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'primary_satisfaction_driver' to title",
+          "timestamp": "2026-11-19T04:48:00.588368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'metro_city' to category",
+          "timestamp": "2026-11-19T04:48:00.596422+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'cuisine_category' to category",
+          "timestamp": "2026-11-19T04:48:00.598368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'order_channel' to category",
+          "timestamp": "2026-11-19T04:48:00.599368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'restaurant_price_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.600369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'weather_condition' to category",
+          "timestamp": "2026-11-19T04:48:00.601369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_spending_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.602370+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_satisfaction_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.603378+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'primary_satisfaction_driver' to category",
+          "timestamp": "2026-11-19T04:48:00.605368+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Generated 5 analytical business questions.",
+          "timestamp": "2026-11-19T04:48:31.255418+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 1/5 ('What is the average order_value_usd for each metro_city?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:38.083740+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 2/5 ('Which cuisine_category has the highest average customer_rating?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:41.924257+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 3/5 ('How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:45.898339+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 4/5 ('What is the total discount_applied_usd for each restaurant_price_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:49.361746+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 5/5 ('Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:53.130417+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 0.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 1.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 2.",
+          "timestamp": "2026-11-19T04:48:56.491179+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 3.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 4.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 0: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:11.087875+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 1: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:15.485331+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 2: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:20.406783+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 3: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:25.305044+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 4: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:34.673426+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "report",
+      "seconds": 105.18,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+          "timestamp": "2026-11-19T04:48:00.567367+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_id' to lower",
+          "timestamp": "2026-11-19T04:48:00.570374+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'metro_city' to title",
+          "timestamp": "2026-11-19T04:48:00.573468+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'cuisine_category' to title",
+          "timestamp": "2026-11-19T04:48:00.575423+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'order_channel' to title",
+          "timestamp": "2026-11-19T04:48:00.577458+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'restaurant_price_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.579453+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'weather_condition' to title",
+          "timestamp": "2026-11-19T04:48:00.581455+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_spending_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.583460+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'customer_satisfaction_tier' to title",
+          "timestamp": "2026-11-19T04:48:00.585373+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Standardized case of 'primary_satisfaction_driver' to title",
+          "timestamp": "2026-11-19T04:48:00.588368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'metro_city' to category",
+          "timestamp": "2026-11-19T04:48:00.596422+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'cuisine_category' to category",
+          "timestamp": "2026-11-19T04:48:00.598368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'order_channel' to category",
+          "timestamp": "2026-11-19T04:48:00.599368+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'restaurant_price_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.600369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'weather_condition' to category",
+          "timestamp": "2026-11-19T04:48:00.601369+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_spending_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.602370+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'customer_satisfaction_tier' to category",
+          "timestamp": "2026-11-19T04:48:00.603378+00:00"
+        },
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Converted column 'primary_satisfaction_driver' to category",
+          "timestamp": "2026-11-19T04:48:00.605368+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Generated 5 analytical business questions.",
+          "timestamp": "2026-11-19T04:48:31.255418+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 1/5 ('What is the average order_value_usd for each metro_city?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:38.083740+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 2/5 ('Which cuisine_category has the highest average customer_rating?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:41.924257+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 3/5 ('How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:45.898339+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 4/5 ('What is the total discount_applied_usd for each restaurant_price_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:49.361746+00:00"
+        },
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Question 5/5 ('Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?') completed with status 'ok' (attempts: 1).",
+          "timestamp": "2026-11-19T04:48:53.130417+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 0.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 1.",
+          "timestamp": "2026-11-19T04:48:54.806963+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 2.",
+          "timestamp": "2026-11-19T04:48:56.491179+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created bar chart for analysis id 3.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        },
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Created metric card for analysis id 4.",
+          "timestamp": "2026-11-19T04:49:02.771624+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 0: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:11.087875+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 1: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:15.485331+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 2: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:20.406783+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 3: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:25.305044+00:00"
+        },
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Review completed for item 4: verdict 'pass'. All checks passed successfully.",
+          "timestamp": "2026-11-19T04:49:34.673426+00:00"
+        },
+        {
+          "agent": "report",
+          "type": "info",
+          "message": "Final report generated and saved to 'outputs\\report_sample.md'.",
+          "timestamp": "2026-11-19T04:49:41.021797+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "complete",
+      "seconds": 105.18,
+      "events": [],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    }
+  ],
+  "final": {
+    "final_report": "# Multi-Agent Data Analysis Report: Sample\n\n**Dataset**: `sample`  \n**Generated**: 2026-11-19  \n**Pipeline**: Multi-Agent LangGraph System (Cleaner -> Analyst -> Visualizer -> Reviewer)  \n\n---\n\n## 1. Executive Key Insights\n\n- London leads with the highest average order value at **$31.6**, while Berlin trails at **$28.63** per order.\n- **Burgers & Fast Food** commands the top average customer rating among all cuisine categories.\n- Delivery speed drops sharply during peak hours: **11.77 km/h** off‑peak vs **8.19 km/h** in peak periods.\n- The **$$ Moderate** price tier receives the largest total discount at **$11,912.31**, followed by **$$$ Premium/Fine Dining** at **$8,584.09**, and **$ Budget** at **$6,132.46**.\n- **Rapid‑Fulfillment** is the most frequent primary satisfaction driver for orders rated “Delighted‑5Star.”\n\n---\n\n## 2. Analysis Details\n\n### Q1: What is the average order_value_usd for each metro_city?\n- **Verification Status**: **Verified**\n- **Takeaway**: London has the highest average order value at 31.61080545229244 USD, while Berlin has the lowest at 28.630034843205575 USD.\n\n**Result Preview**:\n\n| metro_city | average_order_value_usd |\n| --- | --- |\n| Berlin | 28.630034843205575 |\n| Jakarta | 29.27492718446602 |\n| London | 31.61080545229244 |\n| Mumbai | 31.108296146044626 |\n| New York | 29.992108910891087 |\n| Paris | 30.816766169154228 |\n| Sao Paulo | 29.401630824372756 |\n| Seoul | 30.43954183266932 |\n| Singapore | 29.65399408284024 |\n| Sydney | 30.55349565217391 |\n*(Showing first 10 rows of 12)*\n\n\n### Q2: Which cuisine_category has the highest average customer_rating?\n- **Verification Status**: **Verified**\n- **Takeaway**: Result: Burgers & Fast Food\n\n**Result Preview**:\n\n`Burgers & Fast Food`\n\n\n### Q3: How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?\n- **Verification Status**: **Verified**\n- **Takeaway**: Non‑peak hour orders have an average delivery speed of 11.773455866638171 km per hr, while peak hour orders average 8.192833483890395 km per hr.\n\n**Result Preview**:\n\n| is_peak_hour | delivery_speed_km_per_hr |\n| --- | --- |\n| False | 11.773455866638171 |\n| True | 8.192833483890395 |\n\n\n### Q4: What is the total discount_applied_usd for each restaurant_price_tier?\n- **Verification Status**: **Verified**\n- **Takeaway**: $$ Moderate tier has the highest total discount of $11,912.31, followed by $$$ Premium / Fine Dining at $8,584.09, and $ Budget at $6,132.46.\n\n**Result Preview**:\n\n| restaurant_price_tier | discount_applied_usd |\n| --- | --- |\n| $ Budget | 6132.46 |\n| $$ Moderate | 11912.31 |\n| $$$ Premium / Fine Dining | 8584.09 |\n\n\n### Q5: Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?\n- **Verification Status**: **Verified**\n- **Takeaway**: Result: Rapid-Fulfillment\n\n**Result Preview**:\n\n`Rapid-Fulfillment`\n\n\n---\n\n## 3. Visualizations\n\n- **Average Order Value (USD) by Metro City** (Bar Chart): [`outputs/charts/chart_0.html`](outputs\\charts\\chart_0.html)\n- **Metric Card**: Which cuisine_category has the highest average customer_rating? — *Result: Burgers & Fast Food*\n- **Average Delivery Speed (km per hr) by Peak Hour** (Bar Chart): [`outputs/charts/chart_2.html`](outputs\\charts\\chart_2.html)\n- **Total Discount Applied (USD) by Restaurant Price Tier** (Bar Chart): [`outputs/charts/chart_3.html`](outputs\\charts\\chart_3.html)\n- **Metric Card**: Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier? — *Result: Rapid-Fulfillment*\n\n---\n\n## 4. Data Cleaning Summary\n\n- Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)\n- Standardized case of 'order_id' to lower\n- Standardized case of 'metro_city' to title\n- Standardized case of 'cuisine_category' to title\n- Standardized case of 'order_channel' to title\n- Standardized case of 'restaurant_price_tier' to title\n- Standardized case of 'weather_condition' to title\n- Standardized case of 'customer_spending_tier' to title\n- Standardized case of 'customer_satisfaction_tier' to title\n- Standardized case of 'primary_satisfaction_driver' to title\n- Converted column 'metro_city' to category\n- Converted column 'cuisine_category' to category\n- Converted column 'order_channel' to category\n- Converted column 'restaurant_price_tier' to category\n- Converted column 'weather_condition' to category\n- Converted column 'customer_spending_tier' to category\n- Converted column 'customer_satisfaction_tier' to category\n- Converted column 'primary_satisfaction_driver' to category\n\n---\n\n## 5. Quality & Verification Review\n\n- **Items Evaluated**: 5\n- **Verified Items**: 5\n- **Unverified Items**: 0\n- **Unresolved Items**: 0\n- **Items Flagged on First Pass**: 0\n- **Issues Fixed by Retry**: 0\n- **Total Flag Events**: 0\n- **Review Retries Executed**: 0\n\n---\n\n## 6. Unresolved Issues\n\nNone",
+    "cleaning_log": [
+      "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+      "Standardized case of 'order_id' to lower",
+      "Standardized case of 'metro_city' to title",
+      "Standardized case of 'cuisine_category' to title",
+      "Standardized case of 'order_channel' to title",
+      "Standardized case of 'restaurant_price_tier' to title",
+      "Standardized case of 'weather_condition' to title",
+      "Standardized case of 'customer_spending_tier' to title",
+      "Standardized case of 'customer_satisfaction_tier' to title",
+      "Standardized case of 'primary_satisfaction_driver' to title",
+      "Converted column 'metro_city' to category",
+      "Converted column 'cuisine_category' to category",
+      "Converted column 'order_channel' to category",
+      "Converted column 'restaurant_price_tier' to category",
+      "Converted column 'weather_condition' to category",
+      "Converted column 'customer_spending_tier' to category",
+      "Converted column 'customer_satisfaction_tier' to category",
+      "Converted column 'primary_satisfaction_driver' to category"
+    ],
+    "questions": [
+      "What is the average order_value_usd for each metro_city?",
+      "Which cuisine_category has the highest average customer_rating?",
+      "How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?",
+      "What is the total discount_applied_usd for each restaurant_price_tier?",
+      "Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?"
+    ],
+    "analysis_results": [
+      {
+        "id": 0,
+        "question": "What is the average order_value_usd for each metro_city?",
+        "code": "result = df.groupby('metro_city')['order_value_usd'].mean().reset_index(name='average_order_value_usd')",
+        "result": {
+          "__type__": "dataframe",
+          "columns": [
+            "metro_city",
+            "average_order_value_usd"
+          ],
+          "rows": [
+            [
+              "Berlin",
+              28.630034843205575
+            ],
+            [
+              "Jakarta",
+              29.27492718446602
+            ],
+            [
+              "London",
+              31.61080545229244
+            ],
+            [
+              "Mumbai",
+              31.108296146044626
+            ],
+            [
+              "New York",
+              29.992108910891087
+            ],
+            [
+              "Paris",
+              30.816766169154228
+            ],
+            [
+              "Sao Paulo",
+              29.401630824372756
+            ],
+            [
+              "Seoul",
+              30.43954183266932
+            ],
+            [
+              "Singapore",
+              29.65399408284024
+            ],
+            [
+              "Sydney",
+              30.55349565217391
+            ],
+            [
+              "Tokyo",
+              30.529277899343544
+            ],
+            [
+              "Toronto",
+              30.820689655172416
+            ]
+          ],
+          "total_rows": 12,
+          "truncated": false
+        },
+        "status": "ok",
+        "error": null,
+        "attempts": 1,
+        "notes": ""
+      },
+      {
+        "id": 1,
+        "question": "Which cuisine_category has the highest average customer_rating?",
+        "code": "result = df.groupby('cuisine_category')['customer_rating'].mean().idxmax()",
+        "result": "Burgers & Fast Food",
+        "status": "ok",
+        "error": null,
+        "attempts": 1,
+        "notes": ""
+      },
+      {
+        "id": 2,
+        "question": "How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?",
+        "code": "result = df.groupby('is_peak_hour')['delivery_speed_km_per_hr'].mean()",
+        "result": {
+          "__type__": "dataframe",
+          "columns": [
+            "is_peak_hour",
+            "delivery_speed_km_per_hr"
+          ],
+          "rows": [
+            [
+              false,
+              11.773455866638171
+            ],
+            [
+              true,
+              8.192833483890395
+            ]
+          ],
+          "total_rows": 2,
+          "truncated": false
+        },
+        "status": "ok",
+        "error": null,
+        "attempts": 1,
+        "notes": ""
+      },
+      {
+        "id": 3,
+        "question": "What is the total discount_applied_usd for each restaurant_price_tier?",
+        "code": "result = df.groupby('restaurant_price_tier')['discount_applied_usd'].sum()",
+        "result": {
+          "__type__": "dataframe",
+          "columns": [
+            "restaurant_price_tier",
+            "discount_applied_usd"
+          ],
+          "rows": [
+            [
+              "$ Budget",
+              6132.46
+            ],
+            [
+              "$$ Moderate",
+              11912.31
+            ],
+            [
+              "$$$ Premium / Fine Dining",
+              8584.09
+            ]
+          ],
+          "total_rows": 3,
+          "truncated": false
+        },
+        "status": "ok",
+        "error": null,
+        "attempts": 1,
+        "notes": ""
+      },
+      {
+        "id": 4,
+        "question": "Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?",
+        "code": "result = (df.loc[df['customer_satisfaction_tier'] == 'Delighted-5Star', 'primary_satisfaction_driver']\n            .value_counts()\n            .idxmax())",
+        "result": "Rapid-Fulfillment",
+        "status": "ok",
+        "error": null,
+        "attempts": 1,
+        "notes": ""
+      }
+    ],
+    "charts": [
+      {
+        "id": 0,
+        "type": "bar",
+        "title": "Average Order Value (USD) by Metro City",
+        "takeaway": "London has the highest average order value at 31.61080545229244 USD, while Berlin has the lowest at 28.630034843205575 USD.",
+        "figure_json": "{\"data\":[{\"hovertemplate\":\"Metro City=%{x}\\u003cbr\\u003eAverage Order Value (USD)=%{y}\\u003cextra\\u003e\\u003c\\u002fextra\\u003e\",\"legendgroup\":\"\",\"marker\":{\"color\":\"#14B8A6\",\"pattern\":{\"shape\":\"\"}},\"name\":\"\",\"orientation\":\"v\",\"showlegend\":false,\"textposition\":\"auto\",\"x\":[\"Berlin\",\"Jakarta\",\"London\",\"Mumbai\",\"New York\",\"Paris\",\"Sao Paulo\",\"Seoul\",\"Singapore\",\"Sydney\",\"Tokyo\",\"Toronto\"],\"xaxis\":\"x\",\"y\":{\"dtype\":\"f8\",\"bdata\":\"j+im9kmhPEAbEMKgYUY9QITQAb9dnD9AZYvVS7kbP0DvWH7Z+v09QCL\\u002fcJYX0T5AG78XR9FmPUDkiUTQhXA+QIuT\\u002fSdspz1ArZAc5LGNPkAVLaTBfoc+QIwhnbcY0j5A\"},\"yaxis\":\"y\",\"type\":\"bar\"}],\"layout\":{\"template\":{\"data\":{\"barpolar\":[{\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"barpolar\"}],\"bar\":[{\"error_x\":{\"color\":\"#f2f5fa\"},\"error_y\":{\"color\":\"#f2f5fa\"},\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"bar\"}],\"carpet\":[{\"aaxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"baxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"type\":\"carpet\"}],\"choropleth\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"choropleth\"}],\"contourcarpet\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"contourcarpet\"}],\"contour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"contour\"}],\"heatmap\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"heatmap\"}],\"histogram2dcontour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2dcontour\"}],\"histogram2d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2d\"}],\"histogram\":[{\"marker\":{\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"histogram\"}],\"mesh3d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"mesh3d\"}],\"parcoords\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"parcoords\"}],\"pie\":[{\"automargin\":true,\"type\":\"pie\"}],\"scatter3d\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatter3d\"}],\"scattercarpet\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattercarpet\"}],\"scattergeo\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattergeo\"}],\"scattergl\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scattergl\"}],\"scattermap\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattermap\"}],\"scatterpolargl\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolargl\"}],\"scatterpolar\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolar\"}],\"scatter\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scatter\"}],\"scatterternary\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterternary\"}],\"surface\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"surface\"}],\"table\":[{\"cells\":{\"fill\":{\"color\":\"#506784\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"header\":{\"fill\":{\"color\":\"#2a3f5f\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"type\":\"table\"}]},\"layout\":{\"annotationdefaults\":{\"arrowcolor\":\"#f2f5fa\",\"arrowhead\":0,\"arrowwidth\":1},\"autotypenumbers\":\"strict\",\"coloraxis\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"colorscale\":{\"diverging\":[[0,\"#8e0152\"],[0.1,\"#c51b7d\"],[0.2,\"#de77ae\"],[0.3,\"#f1b6da\"],[0.4,\"#fde0ef\"],[0.5,\"#f7f7f7\"],[0.6,\"#e6f5d0\"],[0.7,\"#b8e186\"],[0.8,\"#7fbc41\"],[0.9,\"#4d9221\"],[1,\"#276419\"]],\"sequential\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"sequentialminus\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]]},\"colorway\":[\"#636efa\",\"#EF553B\",\"#00cc96\",\"#ab63fa\",\"#FFA15A\",\"#19d3f3\",\"#FF6692\",\"#B6E880\",\"#FF97FF\",\"#FECB52\"],\"font\":{\"color\":\"#f2f5fa\"},\"geo\":{\"bgcolor\":\"rgb(17,17,17)\",\"lakecolor\":\"rgb(17,17,17)\",\"landcolor\":\"rgb(17,17,17)\",\"showlakes\":true,\"showland\":true,\"subunitcolor\":\"#506784\"},\"hoverlabel\":{\"align\":\"left\"},\"hovermode\":\"closest\",\"paper_bgcolor\":\"rgb(17,17,17)\",\"plot_bgcolor\":\"rgb(17,17,17)\",\"polar\":{\"angularaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"radialaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"scene\":{\"xaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"yaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"zaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"}},\"shapedefaults\":{\"line\":{\"color\":\"#f2f5fa\"}},\"sliderdefaults\":{\"bgcolor\":\"#C8D4E3\",\"bordercolor\":\"rgb(17,17,17)\",\"borderwidth\":1,\"tickwidth\":0},\"ternary\":{\"aaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"baxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"caxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"title\":{\"x\":0.05},\"updatemenudefaults\":{\"bgcolor\":\"#506784\",\"borderwidth\":0},\"xaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2},\"yaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2}}},\"xaxis\":{\"anchor\":\"y\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Metro City\"}},\"yaxis\":{\"anchor\":\"x\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Average Order Value (USD)\"}},\"legend\":{\"tracegroupgap\":0},\"title\":{\"text\":\"Average Order Value (USD) by Metro City\",\"font\":{\"size\":14}},\"barmode\":\"relative\",\"font\":{\"family\":\"Arial, sans-serif\",\"size\":12},\"margin\":{\"l\":40,\"r\":40,\"t\":50,\"b\":40}}}",
+        "spec": {
+          "chart_type": "bar",
+          "x": "metro_city",
+          "y": "average_order_value_usd",
+          "title": "Average Order Value (USD) by Metro City",
+          "x_label": "Metro City",
+          "y_label": "Average Order Value (USD)",
+          "takeaway": "London has the highest average order value at 31.61080545229244 USD, while Berlin has the lowest at 28.630034843205575 USD."
+        },
+        "status": "ok",
+        "note": "Exported to outputs\\charts\\chart_0.html"
+      },
+      {
+        "id": 1,
+        "type": "metric",
+        "title": "Which cuisine_category has the highest average customer_rating?",
+        "takeaway": "Result: Burgers & Fast Food",
+        "figure_json": null,
+        "spec": null,
+        "status": "ok",
+        "note": "Metric value: Burgers & Fast Food"
+      },
+      {
+        "id": 2,
+        "type": "bar",
+        "title": "Average Delivery Speed (km per hr) by Peak Hour",
+        "takeaway": "Non‑peak hour orders have an average delivery speed of 11.773455866638171 km per hr, while peak hour orders average 8.192833483890395 km per hr.",
+        "figure_json": "{\"data\":[{\"hovertemplate\":\"Peak Hour=%{x}\\u003cbr\\u003eAverage Delivery Speed (km per hr)=%{y}\\u003cextra\\u003e\\u003c\\u002fextra\\u003e\",\"legendgroup\":\"\",\"marker\":{\"color\":\"#14B8A6\",\"pattern\":{\"shape\":\"\"}},\"name\":\"\",\"orientation\":\"v\",\"showlegend\":false,\"textposition\":\"auto\",\"x\":[false,true],\"xaxis\":\"x\",\"y\":{\"dtype\":\"f8\",\"bdata\":\"dzhIaAKMJ0AXxAUSu2IgQA==\"},\"yaxis\":\"y\",\"type\":\"bar\"}],\"layout\":{\"template\":{\"data\":{\"barpolar\":[{\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"barpolar\"}],\"bar\":[{\"error_x\":{\"color\":\"#f2f5fa\"},\"error_y\":{\"color\":\"#f2f5fa\"},\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"bar\"}],\"carpet\":[{\"aaxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"baxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"type\":\"carpet\"}],\"choropleth\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"choropleth\"}],\"contourcarpet\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"contourcarpet\"}],\"contour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"contour\"}],\"heatmap\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"heatmap\"}],\"histogram2dcontour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2dcontour\"}],\"histogram2d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2d\"}],\"histogram\":[{\"marker\":{\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"histogram\"}],\"mesh3d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"mesh3d\"}],\"parcoords\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"parcoords\"}],\"pie\":[{\"automargin\":true,\"type\":\"pie\"}],\"scatter3d\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatter3d\"}],\"scattercarpet\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattercarpet\"}],\"scattergeo\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattergeo\"}],\"scattergl\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scattergl\"}],\"scattermap\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattermap\"}],\"scatterpolargl\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolargl\"}],\"scatterpolar\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolar\"}],\"scatter\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scatter\"}],\"scatterternary\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterternary\"}],\"surface\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"surface\"}],\"table\":[{\"cells\":{\"fill\":{\"color\":\"#506784\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"header\":{\"fill\":{\"color\":\"#2a3f5f\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"type\":\"table\"}]},\"layout\":{\"annotationdefaults\":{\"arrowcolor\":\"#f2f5fa\",\"arrowhead\":0,\"arrowwidth\":1},\"autotypenumbers\":\"strict\",\"coloraxis\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"colorscale\":{\"diverging\":[[0,\"#8e0152\"],[0.1,\"#c51b7d\"],[0.2,\"#de77ae\"],[0.3,\"#f1b6da\"],[0.4,\"#fde0ef\"],[0.5,\"#f7f7f7\"],[0.6,\"#e6f5d0\"],[0.7,\"#b8e186\"],[0.8,\"#7fbc41\"],[0.9,\"#4d9221\"],[1,\"#276419\"]],\"sequential\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"sequentialminus\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]]},\"colorway\":[\"#636efa\",\"#EF553B\",\"#00cc96\",\"#ab63fa\",\"#FFA15A\",\"#19d3f3\",\"#FF6692\",\"#B6E880\",\"#FF97FF\",\"#FECB52\"],\"font\":{\"color\":\"#f2f5fa\"},\"geo\":{\"bgcolor\":\"rgb(17,17,17)\",\"lakecolor\":\"rgb(17,17,17)\",\"landcolor\":\"rgb(17,17,17)\",\"showlakes\":true,\"showland\":true,\"subunitcolor\":\"#506784\"},\"hoverlabel\":{\"align\":\"left\"},\"hovermode\":\"closest\",\"paper_bgcolor\":\"rgb(17,17,17)\",\"plot_bgcolor\":\"rgb(17,17,17)\",\"polar\":{\"angularaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"radialaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"scene\":{\"xaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"yaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"zaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"}},\"shapedefaults\":{\"line\":{\"color\":\"#f2f5fa\"}},\"sliderdefaults\":{\"bgcolor\":\"#C8D4E3\",\"bordercolor\":\"rgb(17,17,17)\",\"borderwidth\":1,\"tickwidth\":0},\"ternary\":{\"aaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"baxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"caxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"title\":{\"x\":0.05},\"updatemenudefaults\":{\"bgcolor\":\"#506784\",\"borderwidth\":0},\"xaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2},\"yaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2}}},\"xaxis\":{\"anchor\":\"y\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Peak Hour\"}},\"yaxis\":{\"anchor\":\"x\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Average Delivery Speed (km per hr)\"}},\"legend\":{\"tracegroupgap\":0},\"title\":{\"text\":\"Average Delivery Speed (km per hr) by Peak Hour\",\"font\":{\"size\":14}},\"barmode\":\"relative\",\"font\":{\"family\":\"Arial, sans-serif\",\"size\":12},\"margin\":{\"l\":40,\"r\":40,\"t\":50,\"b\":40}}}",
+        "spec": {
+          "chart_type": "bar",
+          "x": "is_peak_hour",
+          "y": "delivery_speed_km_per_hr",
+          "title": "Average Delivery Speed (km per hr) by Peak Hour",
+          "x_label": "Peak Hour",
+          "y_label": "Average Delivery Speed (km per hr)",
+          "takeaway": "Non‑peak hour orders have an average delivery speed of 11.773455866638171 km per hr, while peak hour orders average 8.192833483890395 km per hr."
+        },
+        "status": "ok",
+        "note": "Exported to outputs\\charts\\chart_2.html"
+      },
+      {
+        "id": 3,
+        "type": "bar",
+        "title": "Total Discount Applied (USD) by Restaurant Price Tier",
+        "takeaway": "$$ Moderate tier has the highest total discount of $11,912.31, followed by $$$ Premium / Fine Dining at $8,584.09, and $ Budget at $6,132.46.",
+        "figure_json": "{\"data\":[{\"hovertemplate\":\"Restaurant Price Tier=%{x}\\u003cbr\\u003eTotal Discount Applied (USD)=%{y}\\u003cextra\\u003e\\u003c\\u002fextra\\u003e\",\"legendgroup\":\"\",\"marker\":{\"color\":\"#14B8A6\",\"pattern\":{\"shape\":\"\"}},\"name\":\"\",\"orientation\":\"v\",\"showlegend\":false,\"textposition\":\"auto\",\"x\":[\"$ Budget\",\"$$ Moderate\",\"$$$ Premium \\u002f Fine Dining\"],\"xaxis\":\"x\",\"y\":{\"dtype\":\"f8\",\"bdata\":\"KVyPwnX0t0DhehSuJ0THQFK4HoULxMBA\"},\"yaxis\":\"y\",\"type\":\"bar\"}],\"layout\":{\"template\":{\"data\":{\"barpolar\":[{\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"barpolar\"}],\"bar\":[{\"error_x\":{\"color\":\"#f2f5fa\"},\"error_y\":{\"color\":\"#f2f5fa\"},\"marker\":{\"line\":{\"color\":\"rgb(17,17,17)\",\"width\":0.5},\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"bar\"}],\"carpet\":[{\"aaxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"baxis\":{\"endlinecolor\":\"#A2B1C6\",\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"minorgridcolor\":\"#506784\",\"startlinecolor\":\"#A2B1C6\"},\"type\":\"carpet\"}],\"choropleth\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"choropleth\"}],\"contourcarpet\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"contourcarpet\"}],\"contour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"contour\"}],\"heatmap\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"heatmap\"}],\"histogram2dcontour\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2dcontour\"}],\"histogram2d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"histogram2d\"}],\"histogram\":[{\"marker\":{\"pattern\":{\"fillmode\":\"overlay\",\"size\":10,\"solidity\":0.2}},\"type\":\"histogram\"}],\"mesh3d\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"type\":\"mesh3d\"}],\"parcoords\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"parcoords\"}],\"pie\":[{\"automargin\":true,\"type\":\"pie\"}],\"scatter3d\":[{\"line\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatter3d\"}],\"scattercarpet\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattercarpet\"}],\"scattergeo\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattergeo\"}],\"scattergl\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scattergl\"}],\"scattermap\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scattermap\"}],\"scatterpolargl\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolargl\"}],\"scatterpolar\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterpolar\"}],\"scatter\":[{\"marker\":{\"line\":{\"color\":\"#283442\"}},\"type\":\"scatter\"}],\"scatterternary\":[{\"marker\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"type\":\"scatterternary\"}],\"surface\":[{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"},\"colorscale\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"type\":\"surface\"}],\"table\":[{\"cells\":{\"fill\":{\"color\":\"#506784\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"header\":{\"fill\":{\"color\":\"#2a3f5f\"},\"line\":{\"color\":\"rgb(17,17,17)\"}},\"type\":\"table\"}]},\"layout\":{\"annotationdefaults\":{\"arrowcolor\":\"#f2f5fa\",\"arrowhead\":0,\"arrowwidth\":1},\"autotypenumbers\":\"strict\",\"coloraxis\":{\"colorbar\":{\"outlinewidth\":0,\"ticks\":\"\"}},\"colorscale\":{\"diverging\":[[0,\"#8e0152\"],[0.1,\"#c51b7d\"],[0.2,\"#de77ae\"],[0.3,\"#f1b6da\"],[0.4,\"#fde0ef\"],[0.5,\"#f7f7f7\"],[0.6,\"#e6f5d0\"],[0.7,\"#b8e186\"],[0.8,\"#7fbc41\"],[0.9,\"#4d9221\"],[1,\"#276419\"]],\"sequential\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]],\"sequentialminus\":[[0.0,\"#0d0887\"],[0.1111111111111111,\"#46039f\"],[0.2222222222222222,\"#7201a8\"],[0.3333333333333333,\"#9c179e\"],[0.4444444444444444,\"#bd3786\"],[0.5555555555555556,\"#d8576b\"],[0.6666666666666666,\"#ed7953\"],[0.7777777777777778,\"#fb9f3a\"],[0.8888888888888888,\"#fdca26\"],[1.0,\"#f0f921\"]]},\"colorway\":[\"#636efa\",\"#EF553B\",\"#00cc96\",\"#ab63fa\",\"#FFA15A\",\"#19d3f3\",\"#FF6692\",\"#B6E880\",\"#FF97FF\",\"#FECB52\"],\"font\":{\"color\":\"#f2f5fa\"},\"geo\":{\"bgcolor\":\"rgb(17,17,17)\",\"lakecolor\":\"rgb(17,17,17)\",\"landcolor\":\"rgb(17,17,17)\",\"showlakes\":true,\"showland\":true,\"subunitcolor\":\"#506784\"},\"hoverlabel\":{\"align\":\"left\"},\"hovermode\":\"closest\",\"paper_bgcolor\":\"rgb(17,17,17)\",\"plot_bgcolor\":\"rgb(17,17,17)\",\"polar\":{\"angularaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"radialaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"scene\":{\"xaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"yaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"},\"zaxis\":{\"backgroundcolor\":\"rgb(17,17,17)\",\"gridcolor\":\"#506784\",\"gridwidth\":2,\"linecolor\":\"#506784\",\"showbackground\":true,\"ticks\":\"\",\"zerolinecolor\":\"#C8D4E3\"}},\"shapedefaults\":{\"line\":{\"color\":\"#f2f5fa\"}},\"sliderdefaults\":{\"bgcolor\":\"#C8D4E3\",\"bordercolor\":\"rgb(17,17,17)\",\"borderwidth\":1,\"tickwidth\":0},\"ternary\":{\"aaxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"baxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"},\"bgcolor\":\"rgb(17,17,17)\",\"caxis\":{\"gridcolor\":\"#506784\",\"linecolor\":\"#506784\",\"ticks\":\"\"}},\"title\":{\"x\":0.05},\"updatemenudefaults\":{\"bgcolor\":\"#506784\",\"borderwidth\":0},\"xaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2},\"yaxis\":{\"automargin\":true,\"gridcolor\":\"#283442\",\"linecolor\":\"#506784\",\"ticks\":\"\",\"title\":{\"standoff\":15},\"zerolinecolor\":\"#283442\",\"zerolinewidth\":2}}},\"xaxis\":{\"anchor\":\"y\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Restaurant Price Tier\"}},\"yaxis\":{\"anchor\":\"x\",\"domain\":[0.0,1.0],\"title\":{\"text\":\"Total Discount Applied (USD)\"}},\"legend\":{\"tracegroupgap\":0},\"title\":{\"text\":\"Total Discount Applied (USD) by Restaurant Price Tier\",\"font\":{\"size\":14}},\"barmode\":\"relative\",\"font\":{\"family\":\"Arial, sans-serif\",\"size\":12},\"margin\":{\"l\":40,\"r\":40,\"t\":50,\"b\":40}}}",
+        "spec": {
+          "chart_type": "bar",
+          "x": "restaurant_price_tier",
+          "y": "discount_applied_usd",
+          "title": "Total Discount Applied (USD) by Restaurant Price Tier",
+          "x_label": "Restaurant Price Tier",
+          "y_label": "Total Discount Applied (USD)",
+          "takeaway": "$$ Moderate tier has the highest total discount of $11,912.31, followed by $$$ Premium / Fine Dining at $8,584.09, and $ Budget at $6,132.46."
+        },
+        "status": "ok",
+        "note": "Exported to outputs\\charts\\chart_3.html"
+      },
+      {
+        "id": 4,
+        "type": "metric",
+        "title": "Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?",
+        "takeaway": "Result: Rapid-Fulfillment",
+        "figure_json": null,
+        "spec": null,
+        "status": "ok",
+        "note": "Metric value: Rapid-Fulfillment"
+      }
+    ],
+    "review_report": [
+      {
+        "id": 0,
+        "question": "What is the average order_value_usd for each metro_city?",
+        "verdict": "pass",
+        "reason": "All checks passed successfully.",
+        "warnings": [],
+        "logic_warnings": [],
+        "takeaway_warning": null,
+        "original_value": "DataFrame(rows=12, cols=['metro_city', 'average_order_value_usd'])",
+        "recomputed_value": "DataFrame(rows=12, cols=['metro_city', 'average_order_value_usd'])",
+        "recomputed_result": {
+          "__type__": "dataframe",
+          "columns": [
+            "metro_city",
+            "average_order_value_usd"
+          ],
+          "rows": [
+            [
+              "Berlin",
+              28.630034843205575
+            ],
+            [
+              "Jakarta",
+              29.27492718446602
+            ],
+            [
+              "London",
+              31.61080545229244
+            ],
+            [
+              "Mumbai",
+              31.108296146044626
+            ],
+            [
+              "New York",
+              29.992108910891087
+            ],
+            [
+              "Paris",
+              30.816766169154228
+            ],
+            [
+              "Sao Paulo",
+              29.401630824372756
+            ],
+            [
+              "Seoul",
+              30.43954183266932
+            ],
+            [
+              "Singapore",
+              29.65399408284024
+            ],
+            [
+              "Sydney",
+              30.55349565217391
+            ],
+            [
+              "Tokyo",
+              30.529277899343544
+            ],
+            [
+              "Toronto",
+              30.820689655172416
+            ]
+          ],
+          "total_rows": 12,
+          "truncated": false
+        },
+        "recomputed_code": "result = (\n    df.pivot_table(values='order_value_usd',\n                   index='metro_city',\n                   aggfunc='mean')\n      .reset_index()\n      .rename(columns={'order_value_usd': 'average_order_value_usd'})\n)",
+        "recomputation_code": "result = (\n    df.pivot_table(values='order_value_usd',\n                   index='metro_city',\n                   aggfunc='mean')\n      .reset_index()\n      .rename(columns={'order_value_usd': 'average_order_value_usd'})\n)",
+        "comparison_trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "failed_check": null
+      },
+      {
+        "id": 1,
+        "question": "Which cuisine_category has the highest average customer_rating?",
+        "verdict": "pass",
+        "reason": "All checks passed successfully.",
+        "warnings": [],
+        "logic_warnings": [],
+        "takeaway_warning": null,
+        "original_value": "Burgers & Fast Food",
+        "recomputed_value": "Burgers & Fast Food",
+        "recomputed_result": "Burgers & Fast Food",
+        "recomputed_code": "result = (\n    df.pivot_table(values='customer_rating', index='cuisine_category', aggfunc='mean')\n      .sort_values('customer_rating', ascending=False)\n      .index[0]\n)",
+        "recomputation_code": "result = (\n    df.pivot_table(values='customer_rating', index='cuisine_category', aggfunc='mean')\n      .sort_values('customer_rating', ascending=False)\n      .index[0]\n)",
+        "comparison_trace": {
+          "branch": "scalar vs scalar",
+          "reason": "scalar text strings match: 'Burgers & Fast Food'",
+          "matched": true
+        },
+        "trace": {
+          "branch": "scalar vs scalar",
+          "reason": "scalar text strings match: 'Burgers & Fast Food'",
+          "matched": true
+        },
+        "failed_check": null
+      },
+      {
+        "id": 2,
+        "question": "How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?",
+        "verdict": "pass",
+        "reason": "All checks passed successfully.",
+        "warnings": [],
+        "logic_warnings": [],
+        "takeaway_warning": null,
+        "original_value": "DataFrame(rows=2, cols=['is_peak_hour', 'delivery_speed_km_per_hr'])",
+        "recomputed_value": "DataFrame(rows=2, cols=['is_peak_hour', 'delivery_speed_km_per_hr'])",
+        "recomputed_result": {
+          "__type__": "dataframe",
+          "columns": [
+            "is_peak_hour",
+            "delivery_speed_km_per_hr"
+          ],
+          "rows": [
+            [
+              false,
+              11.773455866638171
+            ],
+            [
+              true,
+              8.192833483890395
+            ]
+          ],
+          "total_rows": 2,
+          "truncated": false
+        },
+        "recomputed_code": "result = df.pivot_table(values='delivery_speed_km_per_hr',\n                           index='is_peak_hour',\n                           aggfunc='mean').squeeze()",
+        "recomputation_code": "result = df.pivot_table(values='delivery_speed_km_per_hr',\n                           index='is_peak_hour',\n                           aggfunc='mean').squeeze()",
+        "comparison_trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "failed_check": null
+      },
+      {
+        "id": 3,
+        "question": "What is the total discount_applied_usd for each restaurant_price_tier?",
+        "verdict": "pass",
+        "reason": "All checks passed successfully.",
+        "warnings": [],
+        "logic_warnings": [],
+        "takeaway_warning": null,
+        "original_value": "DataFrame(rows=3, cols=['restaurant_price_tier', 'discount_applied_usd'])",
+        "recomputed_value": "DataFrame(rows=3, cols=['restaurant_price_tier', 'discount_applied_usd'])",
+        "recomputed_result": {
+          "__type__": "dataframe",
+          "columns": [
+            "restaurant_price_tier",
+            "discount_applied_usd"
+          ],
+          "rows": [
+            [
+              "$ Budget",
+              6132.46
+            ],
+            [
+              "$$ Moderate",
+              11912.31
+            ],
+            [
+              "$$$ Premium / Fine Dining",
+              8584.09
+            ]
+          ],
+          "total_rows": 3,
+          "truncated": false
+        },
+        "recomputed_code": "result = df.pivot_table(values='discount_applied_usd', index='restaurant_price_tier', aggfunc='sum').squeeze()",
+        "recomputation_code": "result = df.pivot_table(values='discount_applied_usd', index='restaurant_price_tier', aggfunc='sum').squeeze()",
+        "comparison_trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "trace": {
+          "branch": "table same layout",
+          "reason": "all rows and columns match within tolerance",
+          "matched": true
+        },
+        "failed_check": null
+      },
+      {
+        "id": 4,
+        "question": "Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?",
+        "verdict": "pass",
+        "reason": "All checks passed successfully.",
+        "warnings": [],
+        "logic_warnings": [],
+        "takeaway_warning": null,
+        "original_value": "Rapid-Fulfillment",
+        "recomputed_value": "Rapid-Fulfillment",
+        "recomputed_result": "Rapid-Fulfillment",
+        "recomputed_code": "result = (df.pivot_table(index='primary_satisfaction_driver',\n                         columns='customer_satisfaction_tier',\n                         aggfunc='size',\n                         fill_value=0)['Delighted-5Star']\n          .sort_values(ascending=False)\n          .index[0])",
+        "recomputation_code": "result = (df.pivot_table(index='primary_satisfaction_driver',\n                         columns='customer_satisfaction_tier',\n                         aggfunc='size',\n                         fill_value=0)['Delighted-5Star']\n          .sort_values(ascending=False)\n          .index[0])",
+        "comparison_trace": {
+          "branch": "scalar vs scalar",
+          "reason": "scalar text strings match: 'Rapid-Fulfillment'",
+          "matched": true
+        },
+        "trace": {
+          "branch": "scalar vs scalar",
+          "reason": "scalar text strings match: 'Rapid-Fulfillment'",
+          "matched": true
+        },
+        "failed_check": null
+      }
+    ],
+    "caught_errors": [],
+    "run_stats": {
+      "time_seconds": 105.18,
+      "llm_calls": 21,
+      "tokens": 21633,
+      "input_tokens": 15107,
+      "output_tokens": 6526,
+      "by_model": {
+        "openai/gpt-oss-120b": {
+          "provider": "groq",
+          "calls": 21,
+          "input_tokens": 15107,
+          "output_tokens": 6526,
+          "tokens": 21633,
+          "total_tokens": 21633
+        }
+      },
+      "models_used": [
+        "openai/gpt-oss-120b"
+      ],
+      "multiple_models_used": false,
+      "retries_used": 0,
+      "items_flagged_first_pass": 0,
+      "fixed_by_retry": 0,
+      "unresolved": 0,
+      "total_flag_events": 0,
+      "errors_caught": 0
+    },
+    "events": [
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Stripped whitespace in 10 text column(s) (order_id, metro_city, cuisine_category, order_channel, restaurant_price_tier, and 5 more)",
+        "timestamp": "2026-11-19T04:48:00.567367+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'order_id' to lower",
+        "timestamp": "2026-11-19T04:48:00.570374+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'metro_city' to title",
+        "timestamp": "2026-11-19T04:48:00.573468+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'cuisine_category' to title",
+        "timestamp": "2026-11-19T04:48:00.575423+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'order_channel' to title",
+        "timestamp": "2026-11-19T04:48:00.577458+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'restaurant_price_tier' to title",
+        "timestamp": "2026-11-19T04:48:00.579453+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'weather_condition' to title",
+        "timestamp": "2026-11-19T04:48:00.581455+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'customer_spending_tier' to title",
+        "timestamp": "2026-11-19T04:48:00.583460+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'customer_satisfaction_tier' to title",
+        "timestamp": "2026-11-19T04:48:00.585373+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Standardized case of 'primary_satisfaction_driver' to title",
+        "timestamp": "2026-11-19T04:48:00.588368+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'metro_city' to category",
+        "timestamp": "2026-11-19T04:48:00.596422+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'cuisine_category' to category",
+        "timestamp": "2026-11-19T04:48:00.598368+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'order_channel' to category",
+        "timestamp": "2026-11-19T04:48:00.599368+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'restaurant_price_tier' to category",
+        "timestamp": "2026-11-19T04:48:00.600369+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'weather_condition' to category",
+        "timestamp": "2026-11-19T04:48:00.601369+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'customer_spending_tier' to category",
+        "timestamp": "2026-11-19T04:48:00.602370+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'customer_satisfaction_tier' to category",
+        "timestamp": "2026-11-19T04:48:00.603378+00:00"
+      },
+      {
+        "agent": "cleaner",
+        "type": "info",
+        "message": "Converted column 'primary_satisfaction_driver' to category",
+        "timestamp": "2026-11-19T04:48:00.605368+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Generated 5 analytical business questions.",
+        "timestamp": "2026-11-19T04:48:31.255418+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Question 1/5 ('What is the average order_value_usd for each metro_city?') completed with status 'ok' (attempts: 1).",
+        "timestamp": "2026-11-19T04:48:38.083740+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Question 2/5 ('Which cuisine_category has the highest average customer_rating?') completed with status 'ok' (attempts: 1).",
+        "timestamp": "2026-11-19T04:48:41.924257+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Question 3/5 ('How does the average delivery_speed_km_per_hr compare between peak hour and non‑peak hour orders?') completed with status 'ok' (attempts: 1).",
+        "timestamp": "2026-11-19T04:48:45.898339+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Question 4/5 ('What is the total discount_applied_usd for each restaurant_price_tier?') completed with status 'ok' (attempts: 1).",
+        "timestamp": "2026-11-19T04:48:49.361746+00:00"
+      },
+      {
+        "agent": "analyst",
+        "type": "info",
+        "message": "Question 5/5 ('Which primary_satisfaction_driver appears most frequently among orders classified as Delighted-5Star customer_satisfaction_tier?') completed with status 'ok' (attempts: 1).",
+        "timestamp": "2026-11-19T04:48:53.130417+00:00"
+      },
+      {
+        "agent": "visualizer",
+        "type": "info",
+        "message": "Created bar chart for analysis id 0.",
+        "timestamp": "2026-11-19T04:48:54.806963+00:00"
+      },
+      {
+        "agent": "visualizer",
+        "type": "info",
+        "message": "Created metric card for analysis id 1.",
+        "timestamp": "2026-11-19T04:48:54.806963+00:00"
+      },
+      {
+        "agent": "visualizer",
+        "type": "info",
+        "message": "Created bar chart for analysis id 2.",
+        "timestamp": "2026-11-19T04:48:56.491179+00:00"
+      },
+      {
+        "agent": "visualizer",
+        "type": "info",
+        "message": "Created bar chart for analysis id 3.",
+        "timestamp": "2026-11-19T04:49:02.771624+00:00"
+      },
+      {
+        "agent": "visualizer",
+        "type": "info",
+        "message": "Created metric card for analysis id 4.",
+        "timestamp": "2026-11-19T04:49:02.771624+00:00"
+      },
+      {
+        "agent": "reviewer",
+        "type": "info",
+        "message": "Review completed for item 0: verdict 'pass'. All checks passed successfully.",
+        "timestamp": "2026-11-19T04:49:11.087875+00:00"
+      },
+      {
+        "agent": "reviewer",
+        "type": "info",
+        "message": "Review completed for item 1: verdict 'pass'. All checks passed successfully.",
+        "timestamp": "2026-11-19T04:49:15.485331+00:00"
+      },
+      {
+        "agent": "reviewer",
+        "type": "info",
+        "message": "Review completed for item 2: verdict 'pass'. All checks passed successfully.",
+        "timestamp": "2026-11-19T04:49:20.406783+00:00"
+      },
+      {
+        "agent": "reviewer",
+        "type": "info",
+        "message": "Review completed for item 3: verdict 'pass'. All checks passed successfully.",
+        "timestamp": "2026-11-19T04:49:25.305044+00:00"
+      },
+      {
+        "agent": "reviewer",
+        "type": "info",
+        "message": "Review completed for item 4: verdict 'pass'. All checks passed successfully.",
+        "timestamp": "2026-11-19T04:49:34.673426+00:00"
+      },
+      {
+        "agent": "report",
+        "type": "info",
+        "message": "Final report generated and saved to 'outputs\\report_sample.md'.",
+        "timestamp": "2026-11-19T04:49:41.021797+00:00"
+      }
+    ],
+    "cleaning_summary": {
+      "raw_rows": 8000,
+      "raw_cols": 26,
+      "clean_rows": 8000,
+      "clean_cols": 26
+    },
+    "raw_df_path": "sample.csv",
+    "clean_df_path": "cleaned_sample.csv",
+    "retry_count": 0
+  }
+}
