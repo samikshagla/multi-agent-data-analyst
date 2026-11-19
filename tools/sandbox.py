@@ -366,6 +366,21 @@ DISPATCH_METHODS = {
     "pipe",
 }
 
+def _restricted_import(name: str, globals: Any = None, locals: Any = None, fromlist: Any = (), level: int = 0) -> Any:
+    """
+    Restricted import function exposed in child sandbox builtins.
+    Returns the already-injected pandas or numpy module for top-level imports only
+    (level == 0 and fromlist is empty or None). Never imports anything new and never
+    calls the real __import__.
+    """
+    if level == 0 and not fromlist:
+        if name == "pandas":
+            return pd
+        elif name == "numpy":
+            return np
+    raise ImportError("import not allowed")
+
+
 # Restricted builtins exposed inside the sandbox exec environment
 ALLOWED_BUILTINS = {
     "len": len,
@@ -388,7 +403,7 @@ ALLOWED_BUILTINS = {
     "bool": bool,
     "isinstance": isinstance,
     "print": print,
-    "__import__": __import__,
+    "__import__": _restricted_import,
 }
 
 
@@ -478,28 +493,31 @@ def _validate_code_ast(code: str) -> tuple[bool, str | None, str]:
 
     # Check 4: Walk all syntax nodes
     for node in ast.walk(tree):
-        # 4a. Check standard imports (e.g. import os, import sys)
+        # 4a. Check standard imports: ONLY "import pandas", "import pandas as <name>",
+        # "import numpy", "import numpy as <name>" (exact top-level names, no dotted names).
         if isinstance(node, ast.Import):
             for alias in node.names:
-                root = alias.name.split(".")[0]
-                if root not in ALLOWED_MODULES:
+                if alias.name not in ("pandas", "numpy"):
                     return (
                         False,
-                        f"Importing module '{alias.name}' is blocked. Only pandas and numpy are allowed.",
+                        f"Importing module '{alias.name}' is blocked. Only 'import pandas' and 'import numpy' are allowed.",
+                        "blocked",
+                    )
+                if alias.asname and (alias.asname in DENYLIST_NAMES or alias.asname.startswith("__")):
+                    return (
+                        False,
+                        f"Import alias '{alias.asname}' is blocked.",
                         "blocked",
                     )
 
-        # 4b. Check from-imports (e.g. from os import path)
+        # 4b. Check from-imports: ImportFrom is not allowed at all (no star, no relative imports).
         elif isinstance(node, ast.ImportFrom):
-            if not node.module:
-                return False, "Relative imports are blocked.", "blocked"
-            root = node.module.split(".")[0]
-            if root not in ALLOWED_MODULES:
-                return (
-                    False,
-                    f"Importing from '{node.module}' is blocked. Only pandas and numpy are allowed.",
-                    "blocked",
-                )
+            mod_name = node.module if node.module else "."
+            return (
+                False,
+                f"Importing from '{mod_name}' is blocked. 'from ... import ...' statements are not allowed.",
+                "blocked",
+            )
 
         # 4c. String literals containing '__'
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):

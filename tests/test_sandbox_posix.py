@@ -103,9 +103,8 @@ def test_posix_child_empty_env_and_temp_cwd(sample_8k_df: pd.DataFrame):
 
     # Pass inspection code directly to _sandbox_worker to inspect the child's runtime state
     inspect_code = """
-import os
-env_snapshot = dict(os.environ)
-current_dir = os.getcwd()
+env_snapshot = dict(pd.io.common.os.environ)
+current_dir = pd.io.common.os.getcwd()
 result = pd.DataFrame([{
     "env_size": len(env_snapshot),
     "has_path": "PATH" in env_snapshot,

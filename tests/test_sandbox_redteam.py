@@ -504,3 +504,69 @@ def test_attack_r2_output_dict_huge_list(df):
     assert res["status"] != "ok", "Dict with huge list was not rejected"
 
 
+# ===========================================================================
+# Round 3: Import hardening and strict import policy
+# ===========================================================================
+
+@pytest.mark.parametrize("attack_code", [
+    "import os\nresult = 1",
+    "import sys\nresult = 1",
+    "import importlib\nresult = 1",
+    "import builtins\nresult = 1",
+    "import pandas.io.common as c\nresult = str(c.os.listdir('.'))",
+    "import pandas.io.common\nresult = 1",
+    "from pandas.io.common import os as o\nresult = str(o.listdir('.'))",
+    "from pandas import io\nresult = 1",
+    "from pandas import read_csv\nresult = 1",
+    "from pandas import *\nresult = 1",
+    "from numpy import load\nresult = 1",
+    "import numpy.ctypeslib\nresult = 1",
+    "import numpy.lib.npyio as n\nresult = 1",
+    "import pandas as pd, os\nresult = 1",
+    "import os as pd\nresult = 1",
+    "from . import x\nresult = 1",
+    "from .. import y\nresult = 1",
+    "result = __import__('os')",
+    "result = __builtins__",
+    "def f():\n    import os\nresult = f()",
+    "e = exec\nresult = 1",
+    "c = compile\nresult = 1",
+])
+def test_attack_r3_blocked_imports_and_builtins(df, attack_code):
+    res = run_code(attack_code, df)
+    assert res["status"] in ("blocked", "error"), (
+        f"Attack succeeded with status={res['status']} and result={res.get('result')}: {attack_code}"
+    )
+    assert res["status"] != "ok"
+
+
+@pytest.mark.parametrize("valid_code", [
+    "import pandas as pd\nresult = 1",
+    "import numpy as np\nresult = 1",
+    "import pandas\nresult = 1",
+    "import numpy\nresult = 1",
+    "import pandas as pd\nresult = df.groupby('a')['b'].sum().reset_index()",
+    "import numpy as np\nresult = df.groupby('a')['b'].sum().reset_index()",
+    "import pandas\nresult = df.groupby('a')['b'].sum().reset_index()",
+    "import numpy\nresult = df.groupby('a')['b'].sum().reset_index()",
+    "def helper():\n    import pandas as p\n    return p.DataFrame({'x': [1, 2]})\nresult = helper()",
+])
+def test_legal_r3_exact_imports_succeed(df, valid_code):
+    res = run_code(valid_code, df)
+    assert res["status"] == "ok", f"Legal import code failed: {res.get('error')}\nCode: {valid_code}"
+
+
+def test_legal_r3_typical_llm_analyst_output(df):
+    """Regression test for typical LLM output: analyst code starting with 'import pandas as pd' and groupby."""
+    code = """
+import pandas as pd
+grouped = df.groupby('a')['b'].mean().reset_index()
+result = grouped
+"""
+    res = run_code(code, df)
+    assert res["status"] == "ok", f"Typical LLM analyst code failed: {res.get('error')}"
+    assert isinstance(res["result"], pd.DataFrame)
+    assert len(res["result"]) == len(df)
+
+
+
