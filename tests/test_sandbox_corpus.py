@@ -46,8 +46,11 @@ def test_real_llm_corpus_zero_blocked():
     Runs static AST check on the full extracted corpus of real LLM outputs
     and benchmark cases, asserting zero false-positive blocks.
     """
+    from pathlib import Path
     total, num_blocked, blocked = check_corpus()
-    assert total >= 400, f"Expected at least 400 snippets in corpus, found {total}"
+    has_runs = Path("eval/runs").is_dir() and any(Path("eval/runs").glob("**/*.jsonl"))
+    min_expected = 400 if has_runs else 100
+    assert total >= min_expected, f"Expected at least {min_expected} snippets in corpus, found {total}"
     assert num_blocked == 0, f"Corpus check blocked {num_blocked} snippets:\n" + "\n".join(
         f"  - [{b['source']} {b['item_id']}] {b['error']}" for b in blocked
     )

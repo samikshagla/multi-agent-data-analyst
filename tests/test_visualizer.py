@@ -298,8 +298,12 @@ def test_invalid_json_fallback(monkeypatch: pytest.MonkeyPatch):
     assert chart["figure_json"] is not None
 
 
-def test_resilience_on_broken_item():
+def test_resilience_on_broken_item(monkeypatch: pytest.MonkeyPatch):
     """Test 8: The node never crashes when one item breaks; it logs and continues."""
+    monkeypatch.setattr(
+        "agents.visualizer.call_llm",
+        lambda prompt: '{"chart_type": "bar", "x": "value", "y": "value", "title": "Test", "takeaway": "Test"}',
+    )
     state = new_state("data/sample.csv")
     state["analysis_results"] = [
         {

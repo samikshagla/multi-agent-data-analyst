@@ -243,8 +243,9 @@ def test_run_stats_structure(tmp_path):
     assert stats["time_seconds"] >= 0
 
 
-def test_report_tags_and_quality_counts(tmp_path):
+def test_report_tags_and_quality_counts(tmp_path, monkeypatch: pytest.MonkeyPatch):
     """Test 6: Report tags each item as Verified, Unverified, or Unresolved, and tallies them in Quality section."""
+    monkeypatch.setattr("graph.call_llm", lambda prompt: "- Key insight bullet 1\n- Key insight bullet 2")
     from graph import report_node
 
     csv_path = tmp_path / "test_data.csv"
