@@ -2,13 +2,17 @@
 run.py
 CLI Pipeline Runner: Serves as the command-line entrypoint to execute the multi-agent
 data analysis workflow end-to-end on local CSV files using live streaming event outputs.
+Supports recording pipeline execution snapshots via --save-snapshot.
 
 Usage:
     python run.py data/sample.csv
+    python run.py data/sample.csv --save-snapshot demo/sample_run.json --force
 """
 
+import argparse
 import os
 import sys
+import time
 
 # Configure stdout and stderr to handle UTF-8 cleanly on Windows
 if hasattr(sys.stdout, "reconfigure"):
@@ -24,18 +28,27 @@ if hasattr(sys.stderr, "reconfigure"):
 
 from graph import run_pipeline
 from llm import LLMUnavailableError, LLMConfigError
-from components.ui_state import format_local_timestamp
+from components.ui_state import format_local_timestamp, summarize_run
 
 
 def main() -> None:
     """CLI entrypoint for running the Multi-Agent Data Analyst pipeline."""
-    # Validate argument presence
-    if len(sys.argv) < 2:
-        print("Error: Missing dataset path.")
-        print("Usage: python run.py <path_to_csv>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Multi-Agent Data Analyst Pipeline Runner")
+    parser.add_argument("csv_path", help="Path to the dataset CSV file")
+    parser.add_argument(
+        "--save-snapshot",
+        dest="snapshot_path",
+        default=None,
+        help="Save execution snapshot to JSON file",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing snapshot file",
+    )
 
-    csv_path = sys.argv[1].strip()
+    args = parser.parse_args()
+    csv_path = args.csv_path.strip()
 
     # Validate file existence
     if not os.path.exists(csv_path):
@@ -45,6 +58,8 @@ def main() -> None:
     print("=" * 70)
     print(" MULTI-AGENT DATA ANALYST PIPELINE")
     print(f" Target Dataset: {csv_path}")
+    if args.snapshot_path:
+        print(f" Snapshot Target: {args.snapshot_path}")
     print("=" * 70)
 
     seen_events_count = 0
@@ -52,9 +67,27 @@ def main() -> None:
     dataset_name = os.path.splitext(os.path.basename(csv_path))[0]
     report_file_path = os.path.normpath(os.path.join("outputs", f"report_{dataset_name}.md"))
 
+    start_time = time.time()
+    recorded_steps: list[dict] = []
+    final_state_obj: dict | None = None
+
     try:
         # Stream pipeline execution
         for node_name, state_update in run_pipeline(csv_path, stream=True):
+            time_offset = time.time() - start_time
+
+            # Capture final state when complete
+            if node_name == "__final__":
+                final_state_obj = state_update
+                continue
+
+            # Record step for potential snapshot
+            if args.snapshot_path:
+                step_copy = dict(state_update)
+                step_copy["node_name"] = node_name
+                step_copy["seconds"] = round(time_offset, 2)
+                recorded_steps.append(step_copy)
+
             # Print new events live as they are registered
             if "events" in state_update:
                 events = state_update["events"]
@@ -93,6 +126,32 @@ def main() -> None:
         if os.path.exists(report_file_path):
             print(f"  Saved Report:             {report_file_path}")
         print("=" * 70 + "\n")
+
+        # Snapshot saving (only on 'success' or 'issues')
+        if args.snapshot_path and final_state_obj:
+            summary = summarize_run(final_state_obj)
+            final_status = summary.get("final_status", "failed")
+
+            if final_status in ("success", "issues"):
+                from components.demo_snapshot import save_snapshot, save_cleaned_csv_for_demo
+                save_snapshot(
+                    final_state_obj,
+                    recorded_steps,
+                    args.snapshot_path,
+                    force=args.force,
+                )
+                base, _ = os.path.splitext(args.snapshot_path)
+                cleaned_csv_target = f"{base}_cleaned.csv"
+                save_cleaned_csv_for_demo(final_state_obj, cleaned_csv_target)
+
+                size_kb = os.path.getsize(args.snapshot_path) / 1024.0
+                items_count = len(final_state_obj.get("analysis_results", []))
+                retries_count = final_stats.get("retries_used", 0)
+                tokens_count = final_stats.get("tokens", 0)
+                print(f"Snapshot saved: {args.snapshot_path} ({size_kb:.1f} KB)")
+                print(f"Snapshot summary: {items_count} items evaluated, {retries_count} retries, {tokens_count:,} tokens\n")
+            else:
+                print(f"Snapshot not saved: pipeline finished with status '{final_status}'.\n")
 
     except (LLMUnavailableError, LLMConfigError) as e:
         print(f"\n[AI SERVICE ERROR] {e}")

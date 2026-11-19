@@ -211,6 +211,10 @@ def get_cleaning_summary(final_state: dict[str, Any]) -> dict[str, Any]:
             "clean_cols": None,
         }
 
+    # Precomputed summary from snapshot (e.g. demo mode)
+    if "cleaning_summary" in final_state and isinstance(final_state["cleaning_summary"], dict):
+        return dict(final_state["cleaning_summary"])
+
     raw_path = final_state.get("raw_df_path")
     clean_path = final_state.get("clean_df_path")
 
@@ -763,6 +767,7 @@ def report_filename(final_state: dict[str, Any]) -> str:
 def cleaned_csv_bytes(final_state: dict[str, Any]) -> bytes | None:
     """
     Safely reads the cleaned dataset CSV as bytes for Streamlit download.
+    Falls back to demo/sample_run_cleaned.csv if present.
 
     Args:
         final_state: State dictionary from final pipeline execution.
@@ -778,7 +783,16 @@ def cleaned_csv_bytes(final_state: dict[str, Any]) -> bytes | None:
         try:
             return Path(clean_path).read_bytes()
         except Exception:
-            return None
+            pass
+
+    # Demo fallback check
+    demo_cleaned = os.path.join("demo", "sample_run_cleaned.csv")
+    if os.path.exists(demo_cleaned) and os.path.isfile(demo_cleaned):
+        try:
+            return Path(demo_cleaned).read_bytes()
+        except Exception:
+            pass
+
     return None
 
 

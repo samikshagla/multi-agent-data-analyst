@@ -1,0 +1,155 @@
+{
+  "meta": {
+    "schema_version": 1,
+    "recorded_at": "2026-11-19T04:00:00+00:00",
+    "models_used": [
+      "test-model-120b"
+    ],
+    "git_commit": "abc1234",
+    "dataset_name": "test_sample.csv",
+    "raw_rows": 50,
+    "raw_cols": 5,
+    "clean_rows": 48,
+    "clean_cols": 5,
+    "tokens": 1200,
+    "llm_calls": 4,
+    "seconds": 12.5,
+    "retries_used": 0
+  },
+  "steps": [
+    {
+      "node_name": "cleaner",
+      "seconds": 1.2,
+      "events": [
+        {
+          "agent": "cleaner",
+          "type": "info",
+          "message": "Cleaner completed data preparation",
+          "timestamp": "2026-11-19T04:00:01+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "analyst",
+      "seconds": 4.5,
+      "events": [
+        {
+          "agent": "analyst",
+          "type": "info",
+          "message": "Analyst finished computation",
+          "timestamp": "2026-11-19T04:00:04+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "visualizer",
+      "seconds": 7.0,
+      "events": [
+        {
+          "agent": "visualizer",
+          "type": "info",
+          "message": "Visualizer rendered charts",
+          "timestamp": "2026-11-19T04:00:07+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    },
+    {
+      "node_name": "reviewer",
+      "seconds": 10.0,
+      "events": [
+        {
+          "agent": "reviewer",
+          "type": "info",
+          "message": "Reviewer validated numbers",
+          "timestamp": "2026-11-19T04:00:10+00:00"
+        }
+      ],
+      "has_review_feedback": false,
+      "review_feedback": [],
+      "retry_count": 0
+    }
+  ],
+  "final": {
+    "final_report": "# Test Executive Summary Report\n\nAll metrics verified.",
+    "cleaning_log": [
+      "Imputed 2 missing values in column A",
+      "Dropped 1 duplicate row"
+    ],
+    "questions": [
+      "What is total revenue?"
+    ],
+    "analysis_results": [
+      {
+        "id": 0,
+        "question": "What is total revenue?",
+        "code": "result = 50000",
+        "result": 50000,
+        "status": "ok"
+      }
+    ],
+    "charts": [
+      {
+        "id": 0,
+        "title": "Total Revenue",
+        "type": "metric",
+        "takeaway": "Result: 50,000",
+        "figure_json": null,
+        "status": "ok",
+        "note": ""
+      }
+    ],
+    "review_report": [
+      {
+        "id": 0,
+        "question": "What is total revenue?",
+        "verdict": "pass",
+        "reason": "Recomputed calculation matches analyst output.",
+        "original_value": 50000,
+        "recomputed_value": 50000,
+        "warnings": []
+      }
+    ],
+    "caught_errors": [],
+    "run_stats": {
+      "time_seconds": 12.5,
+      "llm_calls": 4,
+      "tokens": 1200,
+      "by_model": {
+        "test-model-120b": {
+          "calls": 4,
+          "tokens": 1200
+        }
+      },
+      "retries_used": 0,
+      "items_flagged_first_pass": 0,
+      "fixed_by_retry": 0,
+      "unresolved": 0
+    },
+    "events": [
+      {
+        "agent": "system",
+        "type": "info",
+        "message": "Pipeline completed successfully",
+        "timestamp": "2026-11-19T04:00:12+00:00"
+      }
+    ],
+    "cleaning_summary": {
+      "raw_rows": 50,
+      "raw_cols": 5,
+      "clean_rows": 48,
+      "clean_cols": 5
+    },
+    "raw_df_path": "test_sample.csv",
+    "clean_df_path": "cleaned_test_sample.csv",
+    "retry_count": 0
+  }
+}

@@ -240,7 +240,13 @@ def render_results(final_state: dict[str, Any] | None) -> None:
                         use_container_width=True,
                     )
                 else:
-                    st.info("Cleaned CSV file is not available on disk for download.")
+                    st.button(
+                        "📥 Download Cleaned CSV",
+                        disabled=True,
+                        key="btn_download_cleaned_csv_disabled",
+                        use_container_width=True,
+                    )
+                    st.caption("Cleaned CSV file is not available for download.")
 
             st.markdown("---")
 
