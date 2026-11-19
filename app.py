@@ -27,6 +27,10 @@ from components.activity_feed import render_feed
 from components.results_tabs import render_results
 from graph import run_pipeline
 from llm import check_llm_available, LLMUnavailableError, LLMConfigError
+from tools.workspace import cleanup_stale_workspaces
+
+# Clean up any stale workspaces older than 2 hours at startup
+cleanup_stale_workspaces()
 
 # ============================================================================
 # 1. Page Configuration & Custom CSS Injection

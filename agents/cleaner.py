@@ -456,8 +456,12 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
-        # Save cleaned dataset to data/cleaned/cleaned_<filename>.csv
-        cleaned_dir = os.path.join("data", "cleaned")
+        # Save cleaned dataset to workspace or data/cleaned/cleaned_<filename>.csv
+        workspace_dir = state.get("workspace_dir")
+        if workspace_dir:
+            cleaned_dir = os.path.normpath(os.path.join(workspace_dir, "cleaned"))
+        else:
+            cleaned_dir = os.path.join("data", "cleaned")
         os.makedirs(cleaned_dir, exist_ok=True)
         raw_basename = os.path.basename(raw_path)
         clean_df_path = os.path.normpath(os.path.join(cleaned_dir, f"cleaned_{raw_basename}"))
@@ -492,7 +496,11 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
         })
 
         try:
-            cleaned_dir = os.path.join("data", "cleaned")
+            workspace_dir = state.get("workspace_dir")
+            if workspace_dir:
+                cleaned_dir = os.path.normpath(os.path.join(workspace_dir, "cleaned"))
+            else:
+                cleaned_dir = os.path.join("data", "cleaned")
             os.makedirs(cleaned_dir, exist_ok=True)
             raw_basename = os.path.basename(raw_path) if raw_path else "fallback.csv"
             fallback_clean_path = os.path.normpath(os.path.join(cleaned_dir, f"cleaned_{raw_basename}"))

@@ -407,11 +407,17 @@ def summarize_run(final_state: dict[str, Any] | None) -> dict[str, Any]:
     # Extract report path if generated
     report_path: str | None = None
     raw_df_path = final_state.get("raw_df_path")
+    workspace_dir = final_state.get("workspace_dir")
     if raw_df_path:
         stem = os.path.splitext(os.path.basename(raw_df_path))[0]
-        candidate_path = os.path.normpath(os.path.join("outputs", f"report_{stem}.md"))
-        if os.path.exists(candidate_path):
-            report_path = candidate_path
+        if workspace_dir:
+            ws_candidate = os.path.normpath(os.path.join(workspace_dir, "reports", f"report_{stem}.md"))
+            if os.path.exists(ws_candidate):
+                report_path = ws_candidate
+        if not report_path:
+            candidate_path = os.path.normpath(os.path.join("outputs", f"report_{stem}.md"))
+            if os.path.exists(candidate_path):
+                report_path = candidate_path
 
     return {
         "duration_sec": float(stats.get("time_seconds", 0.0)),

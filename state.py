@@ -8,7 +8,7 @@ factory function new_state() to initialize default execution states.
 from typing import TypedDict, Any
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """
     Shared state schema across all agents in the Multi-Agent Data Analyst graph.
 
@@ -29,6 +29,7 @@ class AgentState(TypedDict):
         events: Event trail for live activity feed / timeline tracking in the UI.
         run_stats: Performance and usage metrics (execution time, LLM calls, tokens, retries).
         rerun_ids: Analysis result IDs re-executed by Analyst following review feedback.
+        workspace_dir: Optional per-run isolated temporary workspace directory.
     """
     raw_df_path: str
     clean_df_path: str
@@ -45,14 +46,16 @@ class AgentState(TypedDict):
     events: list[dict[str, Any]]
     run_stats: dict[str, Any]
     rerun_ids: list[int]
+    workspace_dir: str | None
 
 
-def new_state(raw_df_path: str) -> AgentState:
+def new_state(raw_df_path: str, workspace_dir: str | None = None) -> AgentState:
     """
     Creates and returns a new AgentState initialized with sensible empty defaults.
 
     Args:
         raw_df_path (str): File path to the raw dataset CSV.
+        workspace_dir (str | None): Optional directory for per-run workspace isolation.
 
     Returns:
         AgentState: State dictionary with default empty values and retry_count 0.
@@ -73,4 +76,5 @@ def new_state(raw_df_path: str) -> AgentState:
         "events": [],
         "run_stats": {},
         "rerun_ids": [],
+        "workspace_dir": workspace_dir,
     }

@@ -5,6 +5,7 @@ Cleaner, Analyst, Visualizer, and Reviewer agents. Implements feedback condition
 bounded retry loops (prepare_retry), final report synthesis, and execution pipeline runners.
 """
 
+import contextvars
 from datetime import datetime, timezone
 import json
 import os
@@ -279,8 +280,13 @@ Return ONLY a bulleted list of 3-5 lines starting with '- '."""
             if ctype == "metric":
                 md_lines.append(f"- **Metric Card**: {title} — *{c.get('takeaway')}*")
             elif c.get("status") == "ok":
-                html_path = os.path.normpath(os.path.join("outputs", "charts", f"chart_{cid}.html"))
-                md_lines.append(f"- **{title}** ({ctype.title()} Chart): [`outputs/charts/chart_{cid}.html`]({html_path})")
+                workspace_dir = state.get("workspace_dir")
+                if workspace_dir:
+                    html_path = os.path.normpath(os.path.join(workspace_dir, "charts", f"chart_{cid}.html"))
+                    md_lines.append(f"- **{title}** ({ctype.title()} Chart): [`chart_{cid}.html`]({html_path})")
+                else:
+                    html_path = os.path.normpath(os.path.join("outputs", "charts", f"chart_{cid}.html"))
+                    md_lines.append(f"- **{title}** ({ctype.title()} Chart): [`outputs/charts/chart_{cid}.html`]({html_path})")
             else:
                 md_lines.append(f"- *{title}* (Visualization skipped: {c.get('note')})")
     else:
@@ -334,10 +340,16 @@ Return ONLY a bulleted list of 3-5 lines starting with '- '."""
 
     final_report_md = "\n".join(md_lines)
 
-    # Save report to outputs/report_<dataset name>.md
-    outputs_dir = "outputs"
-    os.makedirs(outputs_dir, exist_ok=True)
-    report_path = os.path.normpath(os.path.join(outputs_dir, f"report_{dataset_name}.md"))
+    # Save report to workspace or outputs/report_<dataset name>.md
+    workspace_dir = state.get("workspace_dir")
+    if workspace_dir:
+        reports_dir = os.path.normpath(os.path.join(workspace_dir, "reports"))
+        os.makedirs(reports_dir, exist_ok=True)
+        report_path = os.path.normpath(os.path.join(reports_dir, f"report_{dataset_name}.md"))
+    else:
+        outputs_dir = "outputs"
+        os.makedirs(outputs_dir, exist_ok=True)
+        report_path = os.path.normpath(os.path.join(outputs_dir, f"report_{dataset_name}.md"))
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(final_report_md)
 
@@ -481,6 +493,7 @@ def run_pipeline(
     raw_df_path: str,
     stream: bool = False,
     max_retries: int = 3,
+    workspace_dir: str | None = None,
 ) -> Any:
     """
     Executes the Multi-Agent Data Analyst pipeline.
@@ -490,20 +503,22 @@ def run_pipeline(
         stream (bool): If True, returns a generator yielding (node_name, state_update).
                        If False, executes synchronously and returns the final state dict.
         max_retries (int): Maximum review/retry correction cycles (default: 3).
+        workspace_dir (str | None): Optional directory for per-run workspace isolation.
 
     Returns:
         AgentState (if stream=False) or Generator[tuple[str, dict], None, None] (if stream=True).
     """
-    reset_usage_stats()
+    ctx = contextvars.copy_context()
+    ctx.run(reset_usage_stats)
     start_time = time.time()
-    initial_state = new_state(raw_df_path)
+    initial_state = new_state(raw_df_path, workspace_dir=workspace_dir)
     app = build_graph(max_retries=max_retries)
 
     if not stream:
-        # Synchronous execution
-        final_state = app.invoke(initial_state, config={"recursion_limit": 50})
+        # Synchronous execution within caller context
+        final_state = ctx.run(app.invoke, initial_state, {"recursion_limit": 50})
         elapsed = round(time.time() - start_time, 2)
-        usage = get_usage_stats()
+        usage = ctx.run(get_usage_stats)
 
         final_stats = _compute_run_stats(final_state, elapsed, usage)
         final_state["run_stats"] = final_stats
@@ -513,13 +528,22 @@ def run_pipeline(
     def _stream_generator() -> Generator[tuple[str, dict[str, Any]], None, None]:
         accumulated_state: dict[str, Any] = dict(initial_state)
 
-        for event in app.stream(initial_state, config={"recursion_limit": 50}):
+        def _inner_stream():
+            for event in app.stream(initial_state, config={"recursion_limit": 50}):
+                yield event
+
+        inner_gen = _inner_stream()
+        while True:
+            try:
+                event = ctx.run(next, inner_gen)
+            except StopIteration:
+                break
             for node_name, state_update in event.items():
                 accumulated_state.update(state_update)
                 yield node_name, state_update
 
         elapsed = round(time.time() - start_time, 2)
-        usage = get_usage_stats()
+        usage = ctx.run(get_usage_stats)
 
         final_stats = _compute_run_stats(accumulated_state, elapsed, usage)
         accumulated_state["run_stats"] = final_stats

@@ -346,7 +346,11 @@ def visualizer_node(state: AgentState) -> dict[str, Any]:
     charts: list[dict[str, Any]] = []
 
     # Ensure output directory exists for HTML charts
-    charts_dir = os.path.join("outputs", "charts")
+    workspace_dir = state.get("workspace_dir")
+    if workspace_dir:
+        charts_dir = os.path.normpath(os.path.join(workspace_dir, "charts"))
+    else:
+        charts_dir = os.path.join("outputs", "charts")
     os.makedirs(charts_dir, exist_ok=True)
 
     for item in analysis_results:
