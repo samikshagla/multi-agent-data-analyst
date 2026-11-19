@@ -388,6 +388,7 @@ ALLOWED_BUILTINS = {
     "bool": bool,
     "isinstance": isinstance,
     "print": print,
+    "__import__": __import__,
 }
 
 
