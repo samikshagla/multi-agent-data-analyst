@@ -142,7 +142,17 @@ def main() -> None:
                 )
                 base, _ = os.path.splitext(args.snapshot_path)
                 cleaned_csv_target = f"{base}_cleaned.csv"
-                save_cleaned_csv_for_demo(final_state_obj, cleaned_csv_target)
+                clean_path = final_state_obj.get("clean_df_path")
+                if clean_path and os.path.exists(clean_path):
+                    clean_size_bytes = os.path.getsize(clean_path)
+                    limit_bytes = 3 * 1024 * 1024
+                    if clean_size_bytes > limit_bytes:
+                        clean_size_mb = clean_size_bytes / (1024 * 1024)
+                        print(f"cleaned csv not copied: {clean_size_mb:.1f} MB is above the 3 MB limit")
+                    else:
+                        copied = save_cleaned_csv_for_demo(final_state_obj, cleaned_csv_target)
+                        if copied:
+                            print(f"Cleaned CSV: {cleaned_csv_target}")
 
                 size_kb = os.path.getsize(args.snapshot_path) / 1024.0
                 items_count = len(final_state_obj.get("analysis_results", []))

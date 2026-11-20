@@ -494,10 +494,12 @@ def call_llm(prompt: str) -> str:
 
     Enforces DEMO_ONLY guard, session token budgets, and key redaction across all exceptions.
     """
-    # 1. DEMO_ONLY guard
+    # 1. DEMO_ONLY and HOSTED guards
     ctx_config = _current_config.get()
     if os.environ.get("DEMO_ONLY") == "1" and ctx_config is None:
         raise LLMDisabledError("LLM calls are disabled in demo mode")
+    if os.environ.get("HOSTED") == "1" and ctx_config is None:
+        raise LLMDisabledError("Server-side API keys are disabled on this host")
 
     # 2. Check budget BEFORE call
     tracker = _current_tracker.get() or _global_tracker
@@ -565,7 +567,7 @@ def call_llm(prompt: str) -> str:
     raise LLMUnavailableError(f"AI service unreachable: {redacted_last}") from None
 
 
-def check_llm_available() -> tuple[bool, str]:
+def check_llm_available(config: LLMConfig | None = None) -> tuple[bool, str]:
     """
     Performs a lightweight probe call to verify AI service connectivity and credentials.
     Makes a single attempt without updating usage statistics.
@@ -573,9 +575,11 @@ def check_llm_available() -> tuple[bool, str]:
     Returns:
         tuple[bool, str]: (True, "") on success, or (False, friendly_message) on failure.
     """
-    ctx_config = _current_config.get()
+    ctx_config = config if config is not None else _current_config.get()
     if os.environ.get("DEMO_ONLY") == "1" and ctx_config is None:
         return False, "LLM calls are disabled in demo mode"
+    if os.environ.get("HOSTED") == "1" and ctx_config is None:
+        return False, "Server-side API keys are disabled on this host"
 
     if ctx_config is not None:
         provider = ctx_config.provider.strip().lower()

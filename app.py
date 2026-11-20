@@ -6,9 +6,12 @@ activity timeline feed, progress tracking, and execution summary metrics.
 Supports a zero-LLM recorded demo mode with step-by-step playback.
 """
 
+import io
 import os
 from pathlib import Path
 import time
+from typing import Any
+import uuid
 import streamlit as st
 import pandas as pd
 
@@ -27,7 +30,13 @@ from components.ui_state import (
 from components.agent_cards import render_agent_cards
 from components.activity_feed import render_feed
 from components.results_tabs import render_results
-from tools.workspace import cleanup_stale_workspaces
+from tools.limits import (
+    get_settings,
+    validate_upload_size,
+    validate_dataframe,
+)
+from tools.workspace import RunWorkspace, cleanup_stale_workspaces
+from components.run_control import run_guarded
 
 # Clean up any stale workspaces older than 2 hours at startup
 cleanup_stale_workspaces()
@@ -124,6 +133,29 @@ if "skip_animation" not in st.session_state:
 if "demo_missing_notice" not in st.session_state:
     st.session_state.demo_missing_notice = False
 
+if "_active_workspace" not in st.session_state:
+    st.session_state._active_workspace = None
+
+if "cleaned_csv_bytes" not in st.session_state:
+    st.session_state.cleaned_csv_bytes = None
+
+if "cleaned_csv_oversized" not in st.session_state:
+    st.session_state.cleaned_csv_oversized = False
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+
+def cleanup_active_workspace() -> None:
+    """Safely cleans up any active temporary workspace associated with the session."""
+    ws = st.session_state.get("_active_workspace")
+    if ws is not None:
+        try:
+            ws.cleanup()
+        except Exception:
+            pass
+        st.session_state._active_workspace = None
+
 
 def clear_analysis_state() -> None:
     """Resets execution state when a new dataset is loaded or demo run starts."""
@@ -133,6 +165,8 @@ def clear_analysis_state() -> None:
     st.session_state.seen_events_count = 0
     st.session_state.running = False
     st.session_state.error_message = None
+    st.session_state.cleaned_csv_bytes = None
+    st.session_state.cleaned_csv_oversized = False
 
 
 # ============================================================================
@@ -152,6 +186,7 @@ with st.sidebar:
     is_busy = st.session_state.running or st.session_state.replaying_demo
 
     if st.button("📺 Watch a recorded run", disabled=is_busy, use_container_width=True):
+        cleanup_active_workspace()
         if not os.path.exists(snapshot_file):
             st.session_state.demo_missing_notice = True
             st.session_state.is_demo_mode = False
@@ -183,34 +218,80 @@ with st.sidebar:
         st.info("ℹ️ **Demo-only mode**: File uploads and live execution are disabled. Click **Watch a recorded run** above to replay a real multi-agent run.")
     else:
         # CSV File Uploader
+        settings = get_settings()
         uploaded_file = st.file_uploader(
             "Upload a CSV dataset",
             type=["csv"],
             disabled=is_busy,
-            help="Upload a tabular CSV file up to 20MB.",
+            help=f"Upload a tabular CSV file up to {settings.max_upload_mb}MB.",
         )
 
         if uploaded_file is not None:
             upload_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
             if st.session_state._last_processed_upload != upload_identifier:
-                df, error = load_csv_safe(uploaded_file)
-                if error:
-                    st.session_state.error_message = error
+                raw_bytes = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else uploaded_file.read()
+
+                # Check upload size limit
+                size_err = validate_upload_size(len(raw_bytes), settings)
+                if size_err:
+                    st.session_state.error_message = size_err
+                    cleanup_active_workspace()
                     st.session_state.dataset_path = None
                     st.session_state.dataset_name = None
                     st.session_state.dataset_snapshot = None
                     st.session_state.df_preview = None
                     st.session_state.is_demo_mode = False
                     clear_analysis_state()
+                    st.session_state._last_processed_upload = upload_identifier
+                    st.rerun()
+
+                df, error = load_csv_safe(io.BytesIO(raw_bytes))
+                if error:
+                    st.session_state.error_message = error
+                    cleanup_active_workspace()
+                    st.session_state.dataset_path = None
+                    st.session_state.dataset_name = None
+                    st.session_state.dataset_snapshot = None
+                    st.session_state.df_preview = None
+                    st.session_state.is_demo_mode = False
+                    clear_analysis_state()
+                    st.session_state._last_processed_upload = upload_identifier
+                    st.rerun()
+
+                # Validate rows and columns
+                df_err = validate_dataframe(df, settings)
+                if df_err:
+                    st.session_state.error_message = df_err
+                    cleanup_active_workspace()
+                    st.session_state.dataset_path = None
+                    st.session_state.dataset_name = None
+                    st.session_state.dataset_snapshot = None
+                    st.session_state.df_preview = None
+                    st.session_state.is_demo_mode = False
+                    clear_analysis_state()
+                    st.session_state._last_processed_upload = upload_identifier
+                    st.rerun()
+
+                # Valid dataset
+                st.session_state.error_message = None
+                cleanup_active_workspace()
+
+                if settings.hosted:
+                    ws = RunWorkspace()
+                    st.session_state._active_workspace = ws
+                    raw_path = ws.get_raw_path(uploaded_file.name)
+                    Path(raw_path).write_bytes(raw_bytes)
+                    st.session_state.dataset_path = raw_path
                 else:
                     saved_path = save_upload(uploaded_file)
                     st.session_state.dataset_path = str(saved_path)
-                    st.session_state.dataset_name = uploaded_file.name
-                    st.session_state.dataset_snapshot = dataset_snapshot(df)
-                    st.session_state.df_preview = df.head(5)
-                    st.session_state.is_demo_mode = False
-                    st.session_state.demo_missing_notice = False
-                    clear_analysis_state()
+
+                st.session_state.dataset_name = uploaded_file.name
+                st.session_state.dataset_snapshot = dataset_snapshot(df)
+                st.session_state.df_preview = df.head(5)
+                st.session_state.is_demo_mode = False
+                st.session_state.demo_missing_notice = False
+                clear_analysis_state()
                 st.session_state._last_processed_upload = upload_identifier
                 st.rerun()
 
@@ -224,6 +305,7 @@ with st.sidebar:
                 if error:
                     st.error(f"Failed to load sample dataset: {error}")
                 else:
+                    cleanup_active_workspace()
                     st.session_state.dataset_path = sample_path
                     st.session_state.dataset_name = "sample.csv (E-Commerce Deliveries)"
                     st.session_state.dataset_snapshot = dataset_snapshot(df)
@@ -446,15 +528,23 @@ has_live_dataset = (
 if has_live_dataset:
     st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
 
+    settings = get_settings()
+    session_config = st.session_state.get("llm_config")
+    is_hosted_disabled = settings.hosted and session_config is None
+    btn_disabled = st.session_state.running or is_hosted_disabled
+
     run_btn_col, _ = st.columns([1.5, 3.5])
     with run_btn_col:
         run_clicked = st.button(
             "🚀 Run Analysis",
             type="primary",
-            disabled=st.session_state.running,
+            disabled=btn_disabled,
             use_container_width=True,
             help="Initiates the multi-agent pipeline on the loaded dataset.",
         )
+
+    if is_hosted_disabled:
+        st.info("Live runs need your own API key (available in the next update). You can watch the recorded run.")
 
     warning_placeholder = st.empty()
     cards_placeholder = st.empty()
@@ -463,10 +553,10 @@ if has_live_dataset:
     summary_placeholder = st.empty()
 
     if run_clicked:
-        from llm import check_llm_available, LLMUnavailableError, LLMConfigError
+        from llm import check_llm_available
 
         with st.spinner("Checking AI service..."):
-            is_available, check_msg = check_llm_available()
+            is_available, check_msg = check_llm_available(config=session_config)
 
         if not is_available:
             friendly_err, tech_err = format_error_details(check_msg)
@@ -486,7 +576,6 @@ if has_live_dataset:
     # Active Live Execution Loop
     if st.session_state.running:
         from graph import run_pipeline
-        from llm import LLMUnavailableError, LLMConfigError
 
         warning_placeholder.warning(
             "⏳ Analysis takes about 2 minutes. Please don't change anything until it finishes."
@@ -496,22 +585,22 @@ if has_live_dataset:
         render_agent_cards(cards_placeholder, st.session_state.statuses)
         render_feed(feed_placeholder, st.session_state.events_html)
 
-        final_state_obj = None
-        try:
-            current_retry = 0
-            for node_name, state_update in run_pipeline(st.session_state.dataset_path, stream=True):
+        retry_box = [0]
+
+        def on_stream_update(item: Any) -> None:
+            if isinstance(item, tuple) and len(item) == 2:
+                node_name, state_update = item
                 if node_name == "__final__":
-                    final_state_obj = state_update
-                    continue
+                    return
 
                 if "retry_count" in state_update:
-                    current_retry = state_update["retry_count"]
+                    retry_box[0] = state_update["retry_count"]
 
                 st.session_state.statuses = apply_node_update(
                     st.session_state.statuses,
                     node_name,
                     state_update,
-                    retry_count=current_retry,
+                    retry_count=retry_box[0],
                 )
 
                 if "events" in state_update and isinstance(state_update["events"], list):
@@ -523,54 +612,88 @@ if has_live_dataset:
                 render_agent_cards(cards_placeholder, st.session_state.statuses)
                 render_feed(feed_placeholder, st.session_state.events_html)
 
-            if final_state_obj:
-                st.session_state.final_state = final_state_obj
-                st.session_state.statuses = get_final_agent_statuses(
-                    final_state_obj,
-                    st.session_state.statuses,
-                )
-                render_agent_cards(cards_placeholder, st.session_state.statuses, final_state=final_state_obj)
+        active_ws = st.session_state.get("_active_workspace")
+        ws_dir = active_ws.workspace_dir if active_ws else None
 
-        except LLMUnavailableError as ex:
-            warning_placeholder.empty()
+        def make_stream():
+            return run_pipeline(
+                st.session_state.dataset_path,
+                stream=True,
+                workspace_dir=ws_dir,
+            )
+
+        session_id = st.session_state.get("session_id", "default_session")
+        res = run_guarded(
+            settings=settings,
+            session_id=session_id,
+            make_stream=make_stream,
+            on_update=on_stream_update,
+            workspace=active_ws,
+            session_config=session_config,
+        )
+
+        warning_placeholder.empty()
+        status = res.get("status")
+        final_state_obj = res.get("final_state")
+
+        if status == "ok" and final_state_obj:
+            if "cleaned_csv_bytes" in final_state_obj and isinstance(final_state_obj["cleaned_csv_bytes"], bytes):
+                st.session_state.cleaned_csv_bytes = final_state_obj["cleaned_csv_bytes"]
+                st.session_state.cleaned_csv_oversized = False
+            elif final_state_obj.get("cleaned_csv_oversized"):
+                st.session_state.cleaned_csv_bytes = None
+                st.session_state.cleaned_csv_oversized = True
+            else:
+                st.session_state.cleaned_csv_bytes = None
+                st.session_state.cleaned_csv_oversized = False
+
+            st.session_state.final_state = final_state_obj
+            st.session_state.statuses = get_final_agent_statuses(
+                final_state_obj,
+                st.session_state.statuses,
+            )
+            render_agent_cards(cards_placeholder, st.session_state.statuses, final_state=final_state_obj)
+        elif status == "cooldown":
+            st.warning(res.get("error", "Cooldown active."))
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "idle"
+                    v["note"] = "Waiting"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+        elif status == "busy":
+            st.warning(res.get("error", "Server is busy."))
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "idle"
+                    v["note"] = "Waiting"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+        elif status == "timeout":
             for k, v in st.session_state.statuses.items():
                 if isinstance(v, dict) and v.get("status") == "running":
                     v["status"] = "error"
-                    v["note"] = "AI service unreachable"
+                    v["note"] = "Timed out"
             render_agent_cards(cards_placeholder, st.session_state.statuses)
             render_feed(feed_placeholder, st.session_state.events_html)
-            friendly_err, tech_err = format_error_details(ex)
-            st.error(friendly_err)
-            with st.expander("Technical details"):
-                st.code(tech_err)
-        except LLMConfigError as ex:
-            warning_placeholder.empty()
-            for k, v in st.session_state.statuses.items():
-                if isinstance(v, dict) and v.get("status") == "running":
-                    v["status"] = "error"
-                    v["note"] = "Config error"
-            render_agent_cards(cards_placeholder, st.session_state.statuses)
-            render_feed(feed_placeholder, st.session_state.events_html)
-            friendly_err, tech_err = format_error_details(ex)
-            st.error(friendly_err)
-            with st.expander("Technical details"):
-                st.code(tech_err)
-        except Exception as ex:
-            warning_placeholder.empty()
+            st.error(res.get("error", "Run timed out."))
+        else:
             for k, v in st.session_state.statuses.items():
                 if isinstance(v, dict) and v.get("status") == "running":
                     v["status"] = "error"
                     v["note"] = "Failed"
             render_agent_cards(cards_placeholder, st.session_state.statuses)
             render_feed(feed_placeholder, st.session_state.events_html)
-            friendly_err, tech_err = format_error_details(ex)
+            err_val = res.get("exception") or res.get("error", "Unknown error")
+            friendly_err, tech_err = format_error_details(err_val)
             st.error(friendly_err)
             with st.expander("Technical details"):
                 st.code(tech_err)
-        finally:
-            st.session_state.running = False
-            if final_state_obj:
-                st.rerun()
+
+        st.session_state.running = False
+        if active_ws is not None:
+            st.session_state._active_workspace = None
+
+        if status == "ok" and final_state_obj:
+            st.rerun()
 
     else:
         render_agent_cards(

@@ -246,7 +246,10 @@ def render_results(final_state: dict[str, Any] | None) -> None:
                         key="btn_download_cleaned_csv_disabled",
                         use_container_width=True,
                     )
-                    st.caption("Cleaned CSV file is not available for download.")
+                    if getattr(st.session_state, "cleaned_csv_oversized", False):
+                        st.caption("Cleaned CSV exceeds 6 MB in-memory limit and is not available for download.")
+                    else:
+                        st.caption("Cleaned CSV file is not available for download.")
 
             st.markdown("---")
 

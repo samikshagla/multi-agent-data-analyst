@@ -203,6 +203,36 @@ def clip_outliers(
     return new_df, msg, True
 
 
+def is_identifier_column(series: pd.Series, name: str) -> bool:
+    """
+    Identifies whether a DataFrame column represents unique record identifiers,
+    keys, or UUIDs that should never be mutated by lossy transformations.
+
+    Returns True when:
+    - Lower-cased name equals "id", starts with "id_", ends with "_id",
+      contains "uuid", "guid", or ends with "_key".
+    - Or when the column is text, contains at least 50 rows, and every non-null value is unique.
+    """
+    col_name = str(name).strip().lower()
+    if (
+        col_name == "id"
+        or col_name.startswith("id_")
+        or col_name.endswith("_id")
+        or "uuid" in col_name
+        or "guid" in col_name
+        or col_name.endswith("_key")
+    ):
+        return True
+
+    if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
+        if len(series) >= 50:
+            non_null = series.dropna()
+            if len(non_null) > 0 and int(non_null.nunique()) == len(non_null):
+                return True
+
+    return False
+
+
 # Registry of allowed cleaning actions
 ALLOWED_ACTIONS: dict[str, Callable[..., tuple[pd.DataFrame, str, bool]]] = {
     "drop_duplicates": drop_duplicates,
@@ -304,7 +334,7 @@ Allowed actions list:
 - convert_dtype: casts column (column: column name, to: 'datetime' | 'numeric' | 'category')
 - clip_outliers: caps extreme numbers using IQR (column: column name, method: 'iqr')
 
-Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the allowed list, a 'column' (or 'all'), optional parameters, and a short 'reason'. Do not return code. Do not clip outliers in revenue, price, count, or time columns unless the values are clearly impossible. Always list column names explicitly, never use 'all' for standardize_case."""
+Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the allowed list, a 'column' (or 'all'), optional parameters, and a short 'reason'. Do not return code. Do not clip outliers in revenue, price, count, or time columns unless the values are clearly impossible. Always list column names explicitly, never use 'all' for standardize_case. Never modify identifier columns (ids, keys, uuids) except trimming whitespace."""
 
         # Call Gemini LLM
         llm_reply = call_llm(prompt)
@@ -403,6 +433,28 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
                 })
                 continue
 
+            # 2b. Safety Rule: Never modify identifier columns except trimming whitespace
+            if column != "all" and isinstance(column, str) and column in current_df.columns:
+                if is_identifier_column(current_df[column], column):
+                    should_skip_id = False
+                    if action in ("standardize_case", "fill_missing", "clip_outliers"):
+                        should_skip_id = True
+                    elif action == "convert_dtype":
+                        target_to = str(step.get("to", "numeric")).strip().lower()
+                        if target_to in ("numeric", "datetime"):
+                            should_skip_id = True
+
+                    if should_skip_id:
+                        warn_msg = f"Skipped '{action}' on identifier column '{column}'"
+                        cleaning_log.append(warn_msg)
+                        events.append({
+                            "agent": "cleaner",
+                            "type": "warning",
+                            "message": warn_msg,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                        continue
+
             # 3. Safety Rule: Check if row removal exceeds 20% of CURRENT rows
             current_rows = len(current_df)
             if current_rows > 0:
@@ -480,6 +532,12 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
             "profile": updated_profile,
             "cleaning_log": cleaning_log,
             "events": events,
+            "cleaning_summary": {
+                "raw_rows": int(len(df)),
+                "raw_cols": int(len(df.columns)),
+                "clean_rows": int(len(current_df)),
+                "clean_cols": int(len(current_df.columns)),
+            },
         }
 
     except (LLMUnavailableError, LLMConfigError):
@@ -517,9 +575,20 @@ Return ONLY a JSON list of cleaning steps. Each step has an 'action' from the al
             fallback_clean_path = raw_path
             fallback_profile = state.get("profile", {})
 
+        raw_r = int(len(df)) if ("df" in locals() and df is not None) else 0
+        raw_c = int(len(df.columns)) if ("df" in locals() and df is not None) else 0
+        clean_r = int(len(fallback_df)) if ("fallback_df" in locals() and fallback_df is not None) else raw_r
+        clean_c = int(len(fallback_df.columns)) if ("fallback_df" in locals() and fallback_df is not None) else raw_c
+
         return {
             "clean_df_path": fallback_clean_path,
             "profile": fallback_profile,
             "cleaning_log": cleaning_log,
             "events": events,
+            "cleaning_summary": {
+                "raw_rows": raw_r,
+                "raw_cols": raw_c,
+                "clean_rows": clean_r,
+                "clean_cols": clean_c,
+            },
         }

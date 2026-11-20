@@ -767,7 +767,8 @@ def report_filename(final_state: dict[str, Any]) -> str:
 def cleaned_csv_bytes(final_state: dict[str, Any]) -> bytes | None:
     """
     Safely reads the cleaned dataset CSV as bytes for Streamlit download.
-    Falls back to demo/sample_run_cleaned.csv if present.
+    Prefers in-memory bytes if available (final_state or st.session_state),
+    then falls back to disk path, and finally demo fallback.
 
     Args:
         final_state: State dictionary from final pipeline execution.
@@ -778,6 +779,21 @@ def cleaned_csv_bytes(final_state: dict[str, Any]) -> bytes | None:
     if not isinstance(final_state, dict):
         return None
 
+    # 1. Prefer in-memory bytes stored directly in final_state
+    if "cleaned_csv_bytes" in final_state and isinstance(final_state["cleaned_csv_bytes"], bytes):
+        return final_state["cleaned_csv_bytes"]
+
+    # 2. Prefer in-memory bytes stored in st.session_state
+    try:
+        import streamlit as st
+        if hasattr(st, "session_state"):
+            mem_bytes = getattr(st.session_state, "cleaned_csv_bytes", None)
+            if isinstance(mem_bytes, bytes):
+                return mem_bytes
+    except Exception:
+        pass
+
+    # 3. Fall back to reading from disk if clean_df_path exists
     clean_path = final_state.get("clean_df_path")
     if clean_path and os.path.exists(clean_path) and os.path.isfile(clean_path):
         try:
@@ -785,7 +801,7 @@ def cleaned_csv_bytes(final_state: dict[str, Any]) -> bytes | None:
         except Exception:
             pass
 
-    # Demo fallback check
+    # 4. Demo fallback check
     demo_cleaned = os.path.join("demo", "sample_run_cleaned.csv")
     if os.path.exists(demo_cleaned) and os.path.isfile(demo_cleaned):
         try:
