@@ -35,7 +35,7 @@ class LLMConfigError(Exception):
     pass
 
 
-class LLMBudgetError(Exception):
+class LLMBudgetError(LLMConfigError):
     """Raised when an LLM session has reached or exceeded its configured max_tokens budget."""
     pass
 
@@ -543,6 +543,8 @@ def call_llm(prompt: str) -> str:
             return final_text
 
         except Exception as e:
+            if isinstance(e, (LLMBudgetError, LLMDisabledError)):
+                raise
             redacted_err_str = redact(str(e), key=api_key)
             if _is_config_error(e):
                 del e

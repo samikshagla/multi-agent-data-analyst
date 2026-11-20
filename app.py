@@ -9,6 +9,7 @@ Supports a zero-LLM recorded demo mode with step-by-step playback.
 import io
 import os
 from pathlib import Path
+import re
 import time
 from typing import Any
 import uuid
@@ -37,6 +38,13 @@ from tools.limits import (
 )
 from tools.workspace import RunWorkspace, cleanup_stale_workspaces
 from components.run_control import run_guarded
+from llm import (
+    LLMConfig,
+    check_llm_available,
+    llm_session,
+    mask_key,
+    redact,
+)
 
 # Clean up any stale workspaces older than 2 hours at startup
 cleanup_stale_workspaces()
@@ -55,6 +63,16 @@ def is_demo_only() -> bool:
     except Exception:
         pass
     return False
+
+
+def has_env_keys() -> bool:
+    """Checks whether local environment contains configured API keys."""
+    groq_k = os.environ.get("GROQ_API_KEY", "").strip()
+    gemini_k = os.environ.get("GEMINI_API_KEY", "").strip()
+    return bool(
+        (groq_k and groq_k not in ("your_groq_key_here", "your_key_here"))
+        or (gemini_k and gemini_k not in ("your_gemini_key_here", "your_key_here"))
+    )
 
 
 # ============================================================================
@@ -145,6 +163,21 @@ if "cleaned_csv_oversized" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
+if "_user_llm_config" not in st.session_state:
+    st.session_state._user_llm_config = None
+
+if "_key_test_result" not in st.session_state:
+    st.session_state._key_test_result = None
+
+if "privacy_acknowledged" not in st.session_state:
+    st.session_state.privacy_acknowledged = False
+
+if "last_tokens_used" not in st.session_state:
+    st.session_state.last_tokens_used = None
+
+if "last_max_tokens" not in st.session_state:
+    st.session_state.last_max_tokens = None
+
 
 def cleanup_active_workspace() -> None:
     """Safely cleans up any active temporary workspace associated with the session."""
@@ -167,6 +200,8 @@ def clear_analysis_state() -> None:
     st.session_state.error_message = None
     st.session_state.cleaned_csv_bytes = None
     st.session_state.cleaned_csv_oversized = False
+    st.session_state.last_tokens_used = None
+    st.session_state.last_max_tokens = None
 
 
 # ============================================================================
@@ -209,10 +244,117 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Failed to load recorded run: {e}")
 
+    demo_only_active = is_demo_only()
+
+    if not demo_only_active:
+        st.markdown("---")
+        st.header("🔑 Use your own API key")
+
+        provider_display = st.selectbox(
+            "Provider",
+            ["Groq", "Google Gemini"],
+            index=0,
+            disabled=is_busy,
+            key="sb_provider",
+        )
+        provider_name = "groq" if provider_display == "Groq" else "gemini"
+        default_model = "openai/gpt-oss-120b" if provider_name == "groq" else "gemini-2.0-flash"
+
+        model_input = st.text_input(
+            "Model",
+            value=default_model,
+            disabled=is_busy,
+            key=f"sb_model_{provider_name}",
+            help="Model identifier on the selected provider.",
+        )
+
+        model_clean = model_input.strip()
+        model_valid = bool(re.match(r"^[a-zA-Z0-9._/:-]{1,80}$", model_clean))
+        if not model_valid:
+            st.error("Invalid model name. Allowed: letters, digits, and . _ / : - (max 80 chars).")
+
+        with st.form("api_key_form", clear_on_submit=True):
+            key_val = st.text_input(
+                "API Key",
+                type="password",
+                help="Your key stays in this browser session and is sent only to the chosen provider.",
+            )
+            save_btn = st.form_submit_button("Save key", disabled=is_busy)
+
+            if save_btn:
+                if not model_valid:
+                    st.error("Please enter a valid model name before saving the key.")
+                elif not key_val:
+                    st.error("API key cannot be empty.")
+                elif any(c.isspace() for c in key_val):
+                    st.error("API key must not contain any whitespace.")
+                elif len(key_val.strip()) < 20 or len(key_val.strip()) > 200:
+                    st.error("API key must be between 20 and 200 characters.")
+                else:
+                    clean_key = key_val.strip()
+                    key_warn = None
+                    if provider_name == "groq" and not clean_key.startswith("gsk_"):
+                        key_warn = "Warning: Groq API keys usually start with 'gsk_'."
+                    elif provider_name == "gemini" and not clean_key.startswith("AIza"):
+                        key_warn = "Warning: Google Gemini API keys usually start with 'AIza'."
+
+                    cfg = LLMConfig(
+                        provider=provider_name,
+                        model=model_clean,
+                        api_key=clean_key,
+                        max_tokens=get_settings().max_run_tokens,
+                    )
+                    st.session_state["_user_llm_config"] = cfg
+                    st.session_state["_key_test_result"] = None
+                    st.session_state["_key_warning"] = key_warn
+                    st.rerun()
+
+        saved_cfg = st.session_state.get("_user_llm_config")
+        if saved_cfg is not None:
+            masked = mask_key(saved_cfg.api_key)
+            st.success(f"Key saved: {masked} ({saved_cfg.provider}, {saved_cfg.model})")
+            if st.session_state.get("_key_warning"):
+                st.warning(st.session_state["_key_warning"])
+
+            t_col, c_col = st.columns(2)
+            with t_col:
+                if st.button("Test key", disabled=is_busy, use_container_width=True):
+                    with st.spinner("Testing key..."):
+                        with llm_session(saved_cfg):
+                            ok, msg = check_llm_available(config=saved_cfg)
+                    if ok:
+                        st.session_state["_key_test_result"] = ("success", "API key verified successfully!")
+                    else:
+                        msg_lower = (msg or "").lower()
+                        if any(term in msg_lower for term in ("auth", "401", "key", "unauthorized", "invalid", "forbidden", "403")):
+                            friendly_prefix = "The provider rejected this key."
+                        else:
+                            friendly_prefix = "Can't reach the provider."
+                        redacted_err = redact(msg or "", key=saved_cfg.api_key)
+                        st.session_state["_key_test_result"] = ("error", f"{friendly_prefix} {redacted_err}".strip())
+                    st.rerun()
+            with c_col:
+                if st.button("Clear key", disabled=is_busy, use_container_width=True):
+                    for k in ("_user_llm_config", "_key_test_result", "_key_warning", "last_tokens_used", "last_max_tokens"):
+                        st.session_state[k] = None
+                    st.rerun()
+
+            test_res = st.session_state.get("_key_test_result")
+            if test_res:
+                t_kind, t_msg = test_res
+                if t_kind == "success":
+                    st.success(t_msg)
+                else:
+                    st.error(t_msg)
+            else:
+                st.caption("Testing makes one tiny call using your key.")
+        else:
+            st.caption("No API key configured (using local default if available)")
+
+        st.info("Your key stays in this browser session's server memory, is sent only to the provider you chose, and is never stored or logged. Close the tab or press Clear key to remove it. Use a key you can revoke.")
+
     st.markdown("---")
     st.header("📂 Data Source")
-
-    demo_only_active = is_demo_only()
 
     if demo_only_active:
         st.info("ℹ️ **Demo-only mode**: File uploads and live execution are disabled. Click **Watch a recorded run** above to replay a real multi-agent run.")
@@ -305,16 +447,22 @@ with st.sidebar:
                 if error:
                     st.error(f"Failed to load sample dataset: {error}")
                 else:
-                    cleanup_active_workspace()
-                    st.session_state.dataset_path = sample_path
-                    st.session_state.dataset_name = "sample.csv (E-Commerce Deliveries)"
-                    st.session_state.dataset_snapshot = dataset_snapshot(df)
-                    st.session_state.df_preview = df.head(5)
-                    st.session_state.is_demo_mode = False
-                    st.session_state.demo_missing_notice = False
-                    clear_analysis_state()
-                    st.session_state._last_processed_upload = None
-                    st.rerun()
+                    df_err = validate_dataframe(df, settings)
+                    if df_err:
+                        st.error(df_err)
+                    else:
+                        cleanup_active_workspace()
+                        st.session_state.dataset_path = sample_path
+                        st.session_state.dataset_name = "sample.csv (E-Commerce Deliveries)"
+                        st.session_state.dataset_snapshot = dataset_snapshot(df)
+                        st.session_state.df_preview = df.head(5)
+                        st.session_state.is_demo_mode = False
+                        st.session_state.demo_missing_notice = False
+                        clear_analysis_state()
+                        st.session_state._last_processed_upload = None
+                        st.rerun()
+
+        st.caption("Sample: 8,000 rows; a typical run uses about 22k tokens, up to about 58k when the reviewer asks for retries")
 
     st.markdown("---")
 
@@ -519,32 +667,70 @@ if st.session_state.replaying_demo:
 # 8. Live Pipeline Execution Interface (Only when NOT demo-only)
 # ============================================================================
 
-has_live_dataset = (
-    not demo_only_active
-    and not st.session_state.is_demo_mode
-    and st.session_state.dataset_path is not None
-)
-
-if has_live_dataset:
+if not demo_only_active and not st.session_state.is_demo_mode:
     st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
 
+    # Privacy Notice Expander
+    with st.expander("🛡️ What happens to my data?", expanded=not st.session_state.get("privacy_acknowledged", False)):
+        st.markdown(
+            """
+### What data is sent to the AI provider?
+When an analysis is executed, the following parts of your data are formatted into prompts and sent to the selected AI provider using your API key:
+- **Dataset Schema & Profile (Cleaner & Analyst)**: Total row count, column count, column names, pandas data types, null percentage, and unique value counts.
+- **Summary Statistics (Cleaner & Analyst)**: Minimum, maximum, and mean for numeric columns; top 5 most frequent values and occurrence counts for categorical columns.
+- **Sample Rows (Cleaner & Analyst)**: The first **5 sample rows** of the dataset (text fields over 50 characters are truncated).
+- **Analysis Questions & Code (Analyst & Reviewer)**: Generated business questions, column names, and pandas code snippets executed in the sandbox.
+- **Analysis Result Tables (Visualizer & Reviewer)**: Sandboxed results are capped at **50 rows** maximum. During chart generation and review, previews of the first **5 to 10 rows** are sent to the LLM to choose chart types, verify takeaway statements, and perform logic reviews.
+- **Executive Report Insights (Report Synthesis)**: Verified takeaways and brief text summaries of key findings (up to 150 characters per result item).
+
+### Data Retention & Privacy Guarantees
+- **Temporary Server Processing**: The uploaded dataset is processed strictly in this session's isolated temporary server directory and server memory.
+- **Automatic Deletion**: The temporary workspace directory and its files are automatically deleted when the run ends (on success, error, or timeout), or when you select a different dataset or close the app.
+- **In-Memory Key Handling**: Your API key is held only in this browser session's server memory, is never written to disk, is never logged, and is never shared with the author.
+- **Zero Author Data Collection**: Neither your CSV data nor your API key is ever collected, stored permanently, or shared with the author.
+- **Safety Warning**: Do not upload personal, sensitive, private, or confidential data.
+- **Portfolio Demonstration**: This project is a portfolio demo and its results must not be used for commercial, legal, medical, financial, or operational decision-making.
+"""
+        )
+        st.checkbox(
+            "I understand and want to continue",
+            value=st.session_state.get("privacy_acknowledged", False),
+            key="cb_privacy_agree",
+        )
+        st.session_state.privacy_acknowledged = st.session_state.get("cb_privacy_agree", False)
+
     settings = get_settings()
-    session_config = st.session_state.get("llm_config")
-    is_hosted_disabled = settings.hosted and session_config is None
-    btn_disabled = st.session_state.running or is_hosted_disabled
+    user_cfg = st.session_state.get("_user_llm_config")
+    has_dataset = st.session_state.dataset_path is not None
+    has_key = (user_cfg is not None) or (not settings.hosted and has_env_keys())
+    privacy_ticked = bool(st.session_state.get("privacy_acknowledged", False))
+
+    reason_line = None
+    if not has_key:
+        reason_line = "Save your API key first"
+    elif not has_dataset:
+        reason_line = "Choose a dataset"
+    elif not privacy_ticked:
+        reason_line = "Tick the privacy box"
+
+    is_run_enabled = (
+        not st.session_state.running
+        and not st.session_state.replaying_demo
+        and reason_line is None
+    )
 
     run_btn_col, _ = st.columns([1.5, 3.5])
     with run_btn_col:
         run_clicked = st.button(
             "🚀 Run Analysis",
             type="primary",
-            disabled=btn_disabled,
+            disabled=not is_run_enabled,
             use_container_width=True,
             help="Initiates the multi-agent pipeline on the loaded dataset.",
         )
 
-    if is_hosted_disabled:
-        st.info("Live runs need your own API key (available in the next update). You can watch the recorded run.")
+    if reason_line and not st.session_state.running and not st.session_state.replaying_demo:
+        st.caption(reason_line)
 
     warning_placeholder = st.empty()
     cards_placeholder = st.empty()
@@ -553,17 +739,16 @@ if has_live_dataset:
     summary_placeholder = st.empty()
 
     if run_clicked:
-        from llm import check_llm_available
-
         with st.spinner("Checking AI service..."):
-            is_available, check_msg = check_llm_available(config=session_config)
+            is_available, check_msg = check_llm_available(config=user_cfg)
 
         if not is_available:
             friendly_err, tech_err = format_error_details(check_msg)
+            user_key = getattr(user_cfg, "api_key", None)
             with warning_placeholder.container():
-                st.error(friendly_err)
+                st.error(redact(friendly_err, key=user_key))
                 with st.expander("Technical details"):
-                    st.code(tech_err)
+                    st.code(redact(tech_err, key=user_key))
         else:
             warning_placeholder.empty()
             st.session_state.running = True
@@ -613,6 +798,9 @@ if has_live_dataset:
                 render_feed(feed_placeholder, st.session_state.events_html)
 
         active_ws = st.session_state.get("_active_workspace")
+        if active_ws is None and settings.hosted:
+            active_ws = RunWorkspace()
+            st.session_state._active_workspace = active_ws
         ws_dir = active_ws.workspace_dir if active_ws else None
 
         def make_stream():
@@ -629,12 +817,13 @@ if has_live_dataset:
             make_stream=make_stream,
             on_update=on_stream_update,
             workspace=active_ws,
-            session_config=session_config,
+            session_config=user_cfg,
         )
 
         warning_placeholder.empty()
         status = res.get("status")
         final_state_obj = res.get("final_state")
+        user_key = getattr(user_cfg, "api_key", None)
 
         if status == "ok" and final_state_obj:
             if "cleaned_csv_bytes" in final_state_obj and isinstance(final_state_obj["cleaned_csv_bytes"], bytes):
@@ -648,11 +837,21 @@ if has_live_dataset:
                 st.session_state.cleaned_csv_oversized = False
 
             st.session_state.final_state = final_state_obj
+            st.session_state.last_tokens_used = res.get("tokens_used", 0)
+            st.session_state.last_max_tokens = res.get("max_tokens")
             st.session_state.statuses = get_final_agent_statuses(
                 final_state_obj,
                 st.session_state.statuses,
             )
             render_agent_cards(cards_placeholder, st.session_state.statuses, final_state=final_state_obj)
+        elif status == "budget":
+            for k, v in st.session_state.statuses.items():
+                if isinstance(v, dict) and v.get("status") == "running":
+                    v["status"] = "error"
+                    v["note"] = "Budget reached"
+            render_agent_cards(cards_placeholder, st.session_state.statuses)
+            render_feed(feed_placeholder, st.session_state.events_html)
+            st.error(res.get("error", "Token budget reached."))
         elif status == "cooldown":
             st.warning(res.get("error", "Cooldown active."))
             for k, v in st.session_state.statuses.items():
@@ -684,9 +883,9 @@ if has_live_dataset:
             render_feed(feed_placeholder, st.session_state.events_html)
             err_val = res.get("exception") or res.get("error", "Unknown error")
             friendly_err, tech_err = format_error_details(err_val)
-            st.error(friendly_err)
+            st.error(redact(friendly_err, key=user_key))
             with st.expander("Technical details"):
-                st.code(tech_err)
+                st.code(redact(tech_err, key=user_key))
 
         st.session_state.running = False
         if active_ws is not None:
@@ -751,6 +950,17 @@ if (st.session_state.final_state is not None) and not st.session_state.running a
             st.metric("Tokens Consumed", f"{summary['tokens']:,}")
         with c4:
             st.metric("Review Retries", f"{summary['retries_used']}")
+
+        tokens_u = st.session_state.get("last_tokens_used")
+        if tokens_u is None and summary.get("tokens"):
+            tokens_u = summary.get("tokens")
+        max_t = st.session_state.get("last_max_tokens") or get_settings().max_run_tokens
+        user_cfg = st.session_state.get("_user_llm_config")
+        if user_cfg is not None and tokens_u is not None:
+            if max_t is not None:
+                st.info(f"Tokens used: {tokens_u:,} of {max_t:,} (your key)")
+            else:
+                st.info(f"Tokens used: {tokens_u:,} (your key)")
 
         # Row 2: Verification audit metrics
         c5, c6, c7, c8 = st.columns(4)

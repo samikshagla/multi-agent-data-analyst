@@ -107,10 +107,12 @@ def run_guarded(
                     final_obj = item["__final__"]
             return final_obj
 
+        tokens_used = 0
         if effective_config is not None:
             from llm import llm_session
-            with llm_session(effective_config):
+            with llm_session(effective_config) as tracker:
                 final_state = _execute_loop()
+                tokens_used = tracker._stats.get("total_tokens", 0)
         else:
             final_state = _execute_loop()
 
@@ -133,6 +135,8 @@ def run_guarded(
             "status": "ok",
             "error": None,
             "final_state": final_state,
+            "tokens_used": tokens_used,
+            "max_tokens": getattr(effective_config, "max_tokens", None) if effective_config else settings.max_run_tokens,
         }
 
     except RunTimeout as ex:
@@ -142,9 +146,20 @@ def run_guarded(
             "final_state": None,
         }
     except Exception as ex:
+        from llm import LLMBudgetError, redact
+        key_to_redact = getattr(effective_config, "api_key", None)
+        if isinstance(ex, LLMBudgetError):
+            tok_limit = settings.max_run_tokens if settings.max_run_tokens is not None else (getattr(effective_config, "max_tokens", None) or "N")
+            return {
+                "status": "budget",
+                "error": f"Reached the token limit for one run ({tok_limit} tokens). Nothing was saved as a finished run.",
+                "final_state": None,
+                "exception": ex,
+            }
+        redacted_err = redact(str(ex), key=key_to_redact)
         return {
             "status": "error",
-            "error": str(ex),
+            "error": redacted_err,
             "final_state": None,
             "exception": ex,
         }
