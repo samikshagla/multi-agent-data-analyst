@@ -102,7 +102,7 @@ The configuration file supports the following environment variables:
 - `GEMINI_API_KEY`: API key for Google Gemini.
 - `GEMINI_MODEL`: Model identifier for Gemini (default: `gemini-2.0-flash`).
 
-*Note on Groq rate limits*: Groq's free tier imposes requests-per-minute and daily token limits. The pipeline generates 5 questions from the dataset profile. A full pipeline run on `data/sample.csv` consumes about 22k tokens in a run without retries and up to about 58k when the reviewer triggers retries (observed on `data/sample.csv`).
+*Note on Groq rate limits*: Groq's free tier imposes requests-per-minute and daily token limits. The pipeline generates 5 questions from the dataset profile. A full pipeline run on `data/sample.csv` (from Kaggle, CC0; see the Data section) consumes about 22k tokens in a run without retries and up to about 58k when the reviewer triggers retries (observed on `data/sample.csv`).
 
 ### 3. Run the CLI Pipeline
 Run the multi-agent workflow on a dataset directly from the terminal:
@@ -121,6 +121,14 @@ Run the entire automated test suite:
 ```bash
 pytest -q
 ```
+
+---
+
+## Data
+
+The sample data in `data/sample.csv` (8,000 rows and 26 columns) comes from the Kaggle dataset ["Global Food Delivery Restaurant Market 2026"](https://www.kaggle.com/datasets/luthfimuthathohirin/global-food-delivery-restaurant-market-2026) by luthfimuthathohirin, described there as 8,000 global restaurant orders covering delivery logistics, pricing and ratings. License: CC0 1.0 (public domain dedication), as shown on the dataset page.
+
+I did not create this data. The evaluation errors (duplicates, missing values, inconsistent text, negative values, numbers stored as text) were injected by my own scripts into copies of the file; the original data was not edited.
 
 ---
 
