@@ -301,12 +301,12 @@ def get_usage_stats() -> dict[str, Any]:
 def _get_model_name(provider: str) -> str:
     """
     Returns the configured model name for the specified provider.
-    Groq defaults to 'openai/gpt-oss-120b', Gemini defaults to 'gemini-2.0-flash'.
+    Groq defaults to 'openai/gpt-oss-120b', Gemini defaults to 'gemini-3.8-flash'.
     """
     if provider == "groq":
         return os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     elif provider == "gemini":
-        return os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        return os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     return os.getenv("LLM_MODEL", "unknown")
 
 

@@ -258,7 +258,7 @@ with st.sidebar:
             key="sb_provider",
         )
         provider_name = "groq" if provider_display == "Groq" else "gemini"
-        default_model = "openai/gpt-oss-120b" if provider_name == "groq" else "gemini-2.0-flash"
+        default_model = "openai/gpt-oss-120b" if provider_name == "groq" else "gemini-3.8-flash"
 
         model_input = st.text_input(
             "Model",
@@ -326,12 +326,23 @@ with st.sidebar:
                         st.session_state["_key_test_result"] = ("success", "API key verified successfully!")
                     else:
                         msg_lower = (msg or "").lower()
-                        if any(term in msg_lower for term in ("auth", "401", "key", "unauthorized", "invalid", "forbidden", "403")):
+                        if (
+                            "model not found" in msg_lower
+                            or "model_not_found" in msg_lower
+                            or ("model" in msg_lower and any(term in msg_lower for term in ("not found", "not_found", "does not exist", "404", "unknown", "invalid model", "invalid_model")))
+                        ):
+                            st.session_state["_key_test_result"] = (
+                                "error",
+                                "This model name is not available for your key. Try another model name from the provider's model list.",
+                            )
+                        elif any(term in msg_lower for term in ("auth", "401", "key", "unauthorized", "invalid", "forbidden", "403")):
                             friendly_prefix = "The provider rejected this key."
+                            redacted_err = redact(msg or "", key=saved_cfg.api_key)
+                            st.session_state["_key_test_result"] = ("error", f"{friendly_prefix} {redacted_err}".strip())
                         else:
                             friendly_prefix = "Can't reach the provider."
-                        redacted_err = redact(msg or "", key=saved_cfg.api_key)
-                        st.session_state["_key_test_result"] = ("error", f"{friendly_prefix} {redacted_err}".strip())
+                            redacted_err = redact(msg or "", key=saved_cfg.api_key)
+                            st.session_state["_key_test_result"] = ("error", f"{friendly_prefix} {redacted_err}".strip())
                     st.rerun()
             with c_col:
                 if st.button("Clear key", disabled=is_busy, use_container_width=True):
@@ -674,22 +685,21 @@ if not demo_only_active and not st.session_state.is_demo_mode:
     with st.expander("🛡️ What happens to my data?", expanded=not st.session_state.get("privacy_acknowledged", False)):
         st.markdown(
             """
-### What data is sent to the AI provider?
-When an analysis is executed, the following parts of your data are formatted into prompts and sent to the selected AI provider using your API key:
-- **Dataset Schema & Profile (Cleaner & Analyst)**: Total row count, column count, column names, pandas data types, null percentage, and unique value counts.
-- **Summary Statistics (Cleaner & Analyst)**: Minimum, maximum, and mean for numeric columns; top 5 most frequent values and occurrence counts for categorical columns.
-- **Sample Rows (Cleaner & Analyst)**: The first **5 sample rows** of the dataset (text fields over 50 characters are truncated).
-- **Analysis Questions & Code (Analyst & Reviewer)**: Generated business questions, column names, and pandas code snippets executed in the sandbox.
-- **Analysis Result Tables (Visualizer & Reviewer)**: Sandboxed results are capped at **50 rows** maximum. During chart generation and review, previews of the first **5 to 10 rows** are sent to the LLM to choose chart types, verify takeaway statements, and perform logic reviews.
-- **Executive Report Insights (Report Synthesis)**: Verified takeaways and brief text summaries of key findings (up to 150 characters per result item).
+Your full dataset is never sent to the AI. Instead, agents receive only the targeted subsets and summaries needed to profile, query, chart, and review data:
 
-### Data Retention & Privacy Guarantees
-- **Temporary Server Processing**: The uploaded dataset is processed strictly in this session's isolated temporary server directory and server memory.
-- **Automatic Deletion**: The temporary workspace directory and its files are automatically deleted when the run ends (on success, error, or timeout), or when you select a different dataset or close the app.
-- **In-Memory Key Handling**: Your API key is held only in this browser session's server memory, is never written to disk, is never logged, and is never shared with the author.
-- **Zero Author Data Collection**: Neither your CSV data nor your API key is ever collected, stored permanently, or shared with the author.
-- **Safety Warning**: Do not upload personal, sensitive, private, or confidential data.
-- **Portfolio Demonstration**: This project is a portfolio demo and its results must not be used for commercial, legal, medical, financial, or operational decision-making.
+| Step | What is sent |
+| :--- | :--- |
+| **Cleaning & Questions** | Dataset profile: number of rows and columns, duplicate row count, column names, data types, null percentages, unique counts, min, max and mean of numeric columns, the **5 most frequent values** and their counts for each text column (real values from the data), possible date column names, and the **first 5 rows** (text values cut at 50 characters). |
+| **Code Writing** | The question and the column names only. |
+| **Retries & Objections** | Previous code and the error or comment; an **error message** can contain a value from the data. |
+| **Charts & Reviews** | Chart specs get the **first 5 rows** of an analysis result table; takeaway rewriting and the reviewer's sense check get up to **10 rows**. |
+| **Report Summary** | The first **150 characters** of each result. |
+
+- The file is processed in temporary server memory and files and deleted when the run ends.
+- The app does not store the CSV or the key.
+- The data above goes to the provider the visitor chose and the provider's own privacy policy applies.
+- **Do not upload** personal, sensitive or confidential data.
+- This is a portfolio demo and its results must not be used for decisions.
 """
         )
         st.checkbox(
@@ -743,7 +753,16 @@ When an analysis is executed, the following parts of your data are formatted int
             is_available, check_msg = check_llm_available(config=user_cfg)
 
         if not is_available:
-            friendly_err, tech_err = format_error_details(check_msg)
+            msg_lower = (check_msg or "").lower()
+            if (
+                "model not found" in msg_lower
+                or "model_not_found" in msg_lower
+                or ("model" in msg_lower and any(term in msg_lower for term in ("not found", "not_found", "does not exist", "404", "unknown", "invalid model", "invalid_model")))
+            ):
+                friendly_err = "This model name is not available for your key. Try another model name from the provider's model list."
+                tech_err = check_msg
+            else:
+                friendly_err, tech_err = format_error_details(check_msg)
             user_key = getattr(user_cfg, "api_key", None)
             with warning_placeholder.container():
                 st.error(redact(friendly_err, key=user_key))

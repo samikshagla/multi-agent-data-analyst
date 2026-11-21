@@ -629,3 +629,123 @@ def test_recorded_demo_works_in_hosted_mode_zero_llm_no_key(monkeypatch):
 
     tab_labels = [t.label for t in at.tabs]
     assert tab_labels == ["📋 Report", "📊 Charts", "🧹 Cleaning Log", "🛡️ Reviewer Findings"]
+
+
+# ============================================================================
+# 3. Privacy Notice & Model Default Verification Tests
+# ============================================================================
+
+def test_privacy_notice_content_and_phrases(monkeypatch):
+    """
+    Verifies the rewritten privacy notice:
+    - Contains required phrases:
+      * '5 most frequent values'
+      * 'first 5 rows'
+      * '10 rows'
+      * '150 characters'
+      * 'error message'
+      * 'do not upload'
+    - Is compact and readable (under 250 words).
+    """
+    monkeypatch.setenv("HOSTED", "1")
+    monkeypatch.delenv("DEMO_ONLY", raising=False)
+
+    at = AppTest.from_file(APP_PATH, default_timeout=20)
+    at.run()
+
+    # Find the privacy notice text in markdown elements
+    notice_text = None
+    for m in at.markdown:
+        val = str(m.value)
+        if "What is sent" in val and "Cleaning & Questions" in val:
+            notice_text = val
+            break
+
+    assert notice_text is not None, "Privacy notice markdown table not found!"
+
+    # Verify all 6 mandatory phrases are present
+    required_phrases = [
+        "5 most frequent values",
+        "first 5 rows",
+        "10 rows",
+        "150 characters",
+        "error message",
+        "do not upload",
+    ]
+    for phrase in required_phrases:
+        assert phrase.lower() in notice_text.lower(), f"Mandatory phrase '{phrase}' missing from privacy notice!"
+
+    # Verify word count is compact (under 250 words)
+    words = notice_text.split()
+    assert len(words) <= 250, f"Privacy notice is too long ({len(words)} words, expected <= 250)"
+
+
+def test_gemini_default_model(monkeypatch):
+    """
+    Verifies that the Gemini default model is 'gemini-3.8-flash' in llm.py
+    and is dynamically reflected in the Streamlit UI, while allowing env overrides.
+    """
+    from llm import _get_model_name
+
+    # 1. Default without env var
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert _get_model_name("gemini") == "gemini-3.8-flash"
+
+    # 2. Env override works
+    monkeypatch.setenv("GEMINI_MODEL", "custom-gemini-test")
+    assert _get_model_name("gemini") == "custom-gemini-test"
+
+    # 3. AppTest UI reflects gemini-3.8-flash when Google Gemini is selected
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setenv("HOSTED", "1")
+    monkeypatch.delenv("DEMO_ONLY", raising=False)
+
+    at = AppTest.from_file(APP_PATH, default_timeout=20)
+    at.run()
+
+    for sb in at.selectbox:
+        if sb.label == "Provider":
+            sb.select("Google Gemini").run()
+            break
+
+    model_inputs = [ti for ti in at.text_input if ti.label == "Model"]
+    assert len(model_inputs) > 0
+    assert model_inputs[0].value == "gemini-3.8-flash"
+
+
+def test_model_not_found_message(monkeypatch):
+    """
+    When the provider reports that a model is not found, the 'Test key'
+    failure message displays:
+    'This model name is not available for your key. Try another model name from the provider's model list.'
+    and leaks no secret key.
+    """
+    monkeypatch.setenv("HOSTED", "1")
+    monkeypatch.delenv("DEMO_ONLY", raising=False)
+
+    at = AppTest.from_file(APP_PATH, default_timeout=20)
+    at.run()
+
+    secret = "gsk_NOTFOUND0123456789abcdef"
+    for ti in at.text_input:
+        if ti.label == "API Key":
+            ti.input(secret)
+            break
+    for b in at.button:
+        if "Save key" in b.label:
+            b.click().run()
+            break
+
+    # Mock provider returning a "model not found" error containing the key
+    fake_error = Exception(f"404 NotFound: model not found for requested key {secret}")
+    with patch("llm._call_groq", side_effect=fake_error):
+        for b in at.button:
+            if "Test key" in b.label:
+                b.click().run()
+                break
+
+    error_msgs = [e.value for e in at.error]
+    expected_msg = "This model name is not available for your key. Try another model name from the provider's model list."
+    assert any(expected_msg in msg for msg in error_msgs)
+    assert not any(secret in msg for msg in error_msgs)
+

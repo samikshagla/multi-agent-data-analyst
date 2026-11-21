@@ -100,7 +100,9 @@ The configuration file supports the following environment variables:
 - `GROQ_API_KEY`: API key for Groq.
 - `GROQ_MODEL`: Model identifier on Groq (default: `openai/gpt-oss-120b`).
 - `GEMINI_API_KEY`: API key for Google Gemini.
-- `GEMINI_MODEL`: Model identifier for Gemini (default: `gemini-2.0-flash`).
+- `GEMINI_MODEL`: Model identifier for Gemini (default: `gemini-3.8-flash`).
+
+Model names change often; if a model is not found, pick a current one from your provider's list.
 
 *Note on Groq rate limits*: Groq's free tier imposes requests-per-minute and daily token limits. The pipeline generates 5 questions from the dataset profile. A full pipeline run on `data/sample.csv` (from Kaggle, CC0; see the Data section) consumes about 22k tokens in a run without retries and up to about 58k when the reviewer triggers retries (observed on `data/sample.csv`).
 
