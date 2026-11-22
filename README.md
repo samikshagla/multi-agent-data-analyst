@@ -216,7 +216,7 @@ Running systematic evaluations and manual tests exposed five distinct bugs in my
 
 To prepare the application for a public hosted deployment, I added multiple layers of defenses and isolation:
 
-- **Red-teamed sandbox**: The code sandbox was systematically tested across 153 attack cases in `tests/test_sandbox_redteam.py`. Before the first hardening round, 61 of 64 attacks succeeded; before the second round, 46 more attacks succeeded. Following three rounds of hardening, all attacks were blocked.
+- **Red-teamed sandbox**: I wrote the attack tests myself as a self red-team (not an external security audit) in `tests/test_sandbox_redteam.py`, which contains 153 attack snippets out of 172 total tests in the file (attacks plus legal patterns and reviewer snippets). Hardening proceeded in three rounds: in round 1, 61 of 64 attacks succeeded against the original sandbox; in round 2, of the new attacks I added, 46 succeeded against the round-1 sandbox; round 3 tightened imports (exact pandas and numpy imports only, plus a restricted `__import__` stub). Following these three rounds of hardening, all 153 attacks are blocked.
 - **AST rules & allowlists**: Added an allowlist for pandas and numpy names, blocked format-string introspection and dynamic string dispatch escapes, and introduced a restricted `__import__` allowing only exact top-level pandas and numpy imports.
 - **Child-process limits on Linux**: Imposed POSIX resource limits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NOFILE` capped at 32, and `RLIMIT_FSIZE` set to 0), checked in CI on Ubuntu (`ubuntu-latest`).
 - **No server-side API keys (HOSTED mode)**: Server-side API keys are disabled when `HOSTED=1`.
