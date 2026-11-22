@@ -1,6 +1,14 @@
 # Multi-Agent Data Analyst
 
 [![Tests](https://github.com/samikshagla/multi-agent-data-analyst/actions/workflows/tests.yml/badge.svg)](https://github.com/samikshagla/multi-agent-data-analyst/actions/workflows/tests.yml)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://multi-agent-data-analyst-a7imvrmaa5mml86xpvt9bb.streamlit.app/)
+
+Live demo: https://multi-agent-data-analyst-a7imvrmaa5mml86xpvt9bb.streamlit.app/
+- "Watch a recorded run" needs no key and makes no AI calls.
+- Live runs use YOUR OWN Groq or Gemini key, kept only in your browser session's server memory and never stored.
+- It runs on Streamlit Community Cloud's free tier: if the app has been idle it sleeps, click the wake-up button and wait about a minute.
+
+*Hosted limits*: In hosted mode (`HOSTED=1`), uploads are capped at 5 MB, 30,000 rows, and 60 columns. Execution is governed by an 80,000 tokens-per-run budget, a maximum of 2 concurrent runs, a 60-second cooldown between runs per session, and a 600-second (10-minute) wall-clock time limit (see `tools/limits.py` and `DEPLOY.md`). A "Try with sample data" button lets visitors load the 8,000-row sample dataset immediately; a typical run uses about 22k tokens (up to ~58k when the reviewer triggers retries).
 
 I built this project to analyze tabular datasets by coordinating four specialized agents. You upload a CSV, and the agents profile and clean the data, formulate business questions, write and execute pandas code, build interactive Plotly charts, and independently recheck the computed results before producing a final report.
 
@@ -204,10 +212,28 @@ Running systematic evaluations and manual tests exposed five distinct bugs in my
 
 ---
 
+## Safe public hosting
+
+To prepare the application for a public hosted deployment, I added multiple layers of defenses and isolation:
+
+- **Red-teamed sandbox**: The code sandbox was systematically tested across 153 attack cases in `tests/test_sandbox_redteam.py`. Before the first hardening round, 61 of 64 attacks succeeded; before the second round, 46 more attacks succeeded. Following three rounds of hardening, all attacks were blocked.
+- **AST rules & allowlists**: Added an allowlist for pandas and numpy names, blocked format-string introspection and dynamic string dispatch escapes, and introduced a restricted `__import__` allowing only exact top-level pandas and numpy imports.
+- **Child-process limits on Linux**: Imposed POSIX resource limits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NOFILE` capped at 32, and `RLIMIT_FSIZE` set to 0), checked in CI on Ubuntu (`ubuntu-latest`).
+- **No server-side API keys (HOSTED mode)**: Server-side API keys are disabled when `HOSTED=1`.
+- **Session-scoped visitor keys**: The visitor's API key lives only in the browser session's server memory; a key hygiene test with a fake canary key (`test_key_hygiene_full_fake_run` in `tests/test_live_mode.py`) checks that the key never appears in the page, reports, exports, logs or URLs.
+- **Ephemeral workspaces**: Per-run temporary workspaces are automatically deleted upon completion (`tools/workspace.py`).
+- **Concurrency limit**: A server-wide gate (`RunGate`) limits concurrent pipeline executions to 2.
+- **Privacy notice**: A detailed privacy notice lists exactly what is sent to the LLM provider at each step.
+
+The sandbox is a best-effort layer, not a security boundary; real isolation needs a container with no network.
+
+---
+
 ## Limitations
 
 - **Small benchmark scope**: The benchmark consists of 20 analytical questions evaluated on a single food delivery dataset (`data/sample.csv`).
 - **Synthetic error generation**: The 40 reviewer test cases were created programmatically and manually rather than mined from organic user errors. Moreover, the 40 wrong answers are 2 variants of each of 20 questions, so they are not independent observations.
+- **Post-evaluation additions**: After the evaluation I added: sandbox hardening, session-scoped LLM configuration, hosted mode, and an identifier-column guard in the cleaner. I did not re-run the evaluation after these changes; all 20 benchmark questions and the 40 wrong variants still pass the static sandbox check (tests/test_eval_foundation.py and the corpus check).
 - **Unexercised checks and components**: The visualizer was not evaluated against ground truth, and the reviewer's takeaway-number check was not exercised in the evaluation setup.
 - **Subtle error sample size**: The subtle-error row has only 6 unique cases (n=6), resulting in a wide confidence interval ([51.7%, 99.1%]).
 - **Model homogeneity**: The same underlying model (`openai/gpt-oss-120b`) served as both analyst and reviewer. When a model exhibits systemic reasoning biases on specific phrasing, both agents can make the same mistake (e.g. one subtle error was missed because the reviewer adopted the analyst's wrong column).
@@ -231,7 +257,7 @@ multi-agent-data-analyst/
 ├── docs/          # Evaluation summaries (docs/eval/) and UI screenshots (docs/screenshots/)
 ├── eval/          # Benchmark questions, error injectors, scoring engine, and eval runners
 ├── outputs/       # Generated markdown reports and interactive Plotly HTML charts
-├── tests/         # Automated pytest suite (180+ unit and integration tests)
+├── tests/         # Automated pytest suite (400+ unit and integration tests)
 ├── tools/         # Multiprocessing code sandbox and DataFrame profiler
 ├── app.py         # Streamlit web application entrypoint
 ├── graph.py       # LangGraph StateGraph pipeline assembly and routing logic
