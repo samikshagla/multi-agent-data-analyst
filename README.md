@@ -124,6 +124,9 @@ Run the entire automated test suite:
 pytest -q
 ```
 
+### 6. Deploying Your Own Copy
+To deploy this application on Streamlit Community Cloud with visitor-provided API keys and server-side resource guards, see [DEPLOY.md](DEPLOY.md).
+
 ---
 
 ## Data

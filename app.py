@@ -46,6 +46,58 @@ from llm import (
     redact,
 )
 
+ALLOWED_HOSTED_SECRET_NAMES = frozenset({
+    "HOSTED",
+    "DEMO_ONLY",
+    "MAX_UPLOAD_MB",
+    "MAX_ROWS",
+    "MAX_COLS",
+    "MAX_RUN_TOKENS",
+    "MAX_CONCURRENT_RUNS",
+    "RUN_COOLDOWN_SECONDS",
+    "RUN_WALL_CLOCK_SECONDS",
+})
+
+
+def bridge_secrets_to_env() -> None:
+    """
+    Bridges allowlisted deployment settings from st.secrets into os.environ.
+    Only copies allowlisted variables when present in st.secrets and not already set in os.environ.
+    Refuses any sensitive names containing KEY, SECRET, PASSWORD, or TOKEN (except MAX_RUN_TOKENS).
+    Does nothing and raises nothing if st.secrets is missing or empty.
+    Logs a warning if HOSTED=1 while server-side keys exist in environment.
+    """
+    try:
+        if hasattr(st, "secrets") and st.secrets is not None:
+            for k in list(st.secrets.keys()):
+                k_str = str(k).strip()
+                k_upper = k_str.upper()
+                if any(forbidden in k_upper for forbidden in ("KEY", "SECRET", "PASSWORD", "TOKEN")):
+                    if k_upper != "MAX_RUN_TOKENS":
+                        continue
+                if k_upper in ALLOWED_HOSTED_SECRET_NAMES:
+                    if k_upper not in os.environ:
+                        val = st.secrets.get(k)
+                        if val is not None:
+                            os.environ[k_upper] = str(val).strip()
+    except Exception:
+        pass
+
+    if os.environ.get("HOSTED") == "1":
+        groq_k = os.environ.get("GROQ_API_KEY", "").strip()
+        gemini_k = os.environ.get("GEMINI_API_KEY", "").strip()
+        has_keys = bool(
+            (groq_k and groq_k not in ("your_groq_key_here", "your_key_here"))
+            or (gemini_k and gemini_k not in ("your_gemini_key_here", "your_key_here"))
+        )
+        if has_keys:
+            import logging
+            logging.getLogger(__name__).warning("server-side keys are present but disabled in hosted mode")
+
+
+# Bridge Streamlit Community Cloud secrets before any settings or logic run
+bridge_secrets_to_env()
+
 # Clean up any stale workspaces older than 2 hours at startup
 cleanup_stale_workspaces()
 
@@ -685,20 +737,22 @@ if not demo_only_active and not st.session_state.is_demo_mode:
     with st.expander("🛡️ What happens to my data?", expanded=not st.session_state.get("privacy_acknowledged", False)):
         st.markdown(
             """
-Your full dataset is never sent to the AI. Instead, agents receive only the targeted subsets and summaries needed to profile, query, chart, and review data:
+Only a small summary is sent, not the whole file (for a file with 5 rows or fewer, the sample rows are the whole file).
 
 | Step | What is sent |
-| :--- | :--- |
-| **Cleaning & Questions** | Dataset profile: number of rows and columns, duplicate row count, column names, data types, null percentages, unique counts, min, max and mean of numeric columns, the **5 most frequent values** and their counts for each text column (real values from the data), possible date column names, and the **first 5 rows** (text values cut at 50 characters). |
-| **Code Writing** | The question and the column names only. |
-| **Retries & Objections** | Previous code and the error or comment; an **error message** can contain a value from the data. |
-| **Charts & Reviews** | Chart specs get the **first 5 rows** of an analysis result table; takeaway rewriting and the reviewer's sense check get up to **10 rows**. |
-| **Report Summary** | The first **150 characters** of each result. |
+|---|---|
+| Cleaning & Questions | Profile: rows, cols, duplicates, column names, dtypes, null %, unique counts, min/max/mean of numbers, the 5 most frequent values and counts for text columns (real data values), date columns, and first 5 rows (text cut at 50 characters). |
+| Code Writing | The question and the column names only. |
+| Review | The question, the analyst's code and the column names. |
+| Retries | Previous code and error or comment; an error message can contain a value from the data. |
+| Charts & Sense Check | Chart specs get first 5 rows of result tables; takeaway rewriting and reviewer sense check get up to 10 rows. |
+| Report Summary | The first 150 characters of each result. |
 
-- The file is processed in temporary server memory and files and deleted when the run ends.
+- Processed in temporary server memory and files; deleted when run ends.
 - The app does not store the CSV or the key.
 - The data above goes to the provider the visitor chose and the provider's own privacy policy applies.
-- **Do not upload** personal, sensitive or confidential data.
+- The hosting platform keeps its own technical logs and its policies apply.
+- Do not upload personal, sensitive or confidential data.
 - This is a portfolio demo and its results must not be used for decisions.
 """
         )

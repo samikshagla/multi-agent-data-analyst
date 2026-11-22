@@ -284,13 +284,13 @@ def test_session_isolation_independent_keys(monkeypatch):
     at1.run()
     for ti in at1.text_input:
         if ti.label == "API Key":
-            ti.input("gsk_SESSION1_0123456789abcdef")
+            ti.input(CANARY_KEY)
             break
     for b in at1.button:
         if "Save key" in b.label:
             b.click().run()
             break
-    assert at1.session_state._user_llm_config.api_key == "gsk_SESSION1_0123456789abcdef"
+    assert at1.session_state._user_llm_config.api_key == CANARY_KEY
 
     # Second fresh session
     at2 = AppTest.from_file(APP_PATH, default_timeout=20)
@@ -310,7 +310,7 @@ def test_test_key_button_success_and_redaction(monkeypatch):
     at = AppTest.from_file(APP_PATH, default_timeout=20)
     at.run()
 
-    secret = "gsk_SECRETLEAK0123456789abcdef"
+    secret = "gsk_TESTKEY0123456789abcdef"
     for ti in at.text_input:
         if ti.label == "API Key":
             ti.input(secret)
@@ -671,6 +671,9 @@ def test_privacy_notice_content_and_phrases(monkeypatch):
         "150 characters",
         "error message",
         "do not upload",
+        "Only a small summary is sent, not the whole file",
+        "The question, the analyst's code and the column names",
+        "The hosting platform keeps its own technical logs and its policies apply",
     ]
     for phrase in required_phrases:
         assert phrase.lower() in notice_text.lower(), f"Mandatory phrase '{phrase}' missing from privacy notice!"
@@ -726,7 +729,7 @@ def test_model_not_found_message(monkeypatch):
     at = AppTest.from_file(APP_PATH, default_timeout=20)
     at.run()
 
-    secret = "gsk_NOTFOUND0123456789abcdef"
+    secret = "gsk_TESTKEY0123456789abcdef"
     for ti in at.text_input:
         if ti.label == "API Key":
             ti.input(secret)

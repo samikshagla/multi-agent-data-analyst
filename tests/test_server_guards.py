@@ -647,3 +647,101 @@ def test_run_py_snapshot_cleaned_csv_size_limit(tmp_path, capsys):
 
     captured2 = capsys.readouterr()
     assert f"Cleaned CSV: {cleaned_target}" in captured2.out
+
+
+# ============================================================================
+# 10. bridge_secrets_to_env Tests
+# ============================================================================
+
+def test_bridge_secrets_to_env_allowlist_and_guards(monkeypatch, caplog):
+    """
+    Verifies bridge_secrets_to_env():
+    - Copies allowlisted names into os.environ
+    - Refuses API keys, passwords, and sensitive token names (except MAX_RUN_TOKENS)
+    - Does not overwrite already-set environment variables
+    - Does not crash when secrets file is missing
+    - Logs a warning without key leakage when HOSTED=1 and server keys exist
+    """
+    import streamlit as st
+    from app import bridge_secrets_to_env, ALLOWED_HOSTED_SECRET_NAMES
+
+    orig_env = dict(os.environ)
+    try:
+        # Clear target env vars directly from os.environ
+        for k in list(ALLOWED_HOSTED_SECRET_NAMES) + [
+            "GROQ_API_KEY", "GEMINI_API_KEY", "SECRET_KEY", "MY_PASSWORD", "AUTH_TOKEN"
+        ]:
+            os.environ.pop(k, None)
+
+        # 1. Allowlisted names copied and MAX_RUN_TOKENS allowed
+        fake_secrets = {
+            "HOSTED": "1",
+            "DEMO_ONLY": "0",
+            "MAX_UPLOAD_MB": "10",
+            "MAX_ROWS": "15000",
+            "MAX_COLS": "40",
+            "MAX_RUN_TOKENS": "50000",
+            "MAX_CONCURRENT_RUNS": "3",
+            "RUN_COOLDOWN_SECONDS": "30",
+            "RUN_WALL_CLOCK_SECONDS": "120",
+            # Sensitive names that MUST be rejected
+            "GROQ_API_KEY": "gsk_TESTKEY0123456789abcdef",
+            "GEMINI_API_KEY": "dummy_gemini_key",
+            "SECRET_KEY": "super_secret_value",
+            "MY_PASSWORD": "secret_password",
+            "AUTH_TOKEN": "bearer_token_xyz",
+            "SOME_OTHER_VAR": "custom_value",
+        }
+
+        monkeypatch.setattr(st, "secrets", fake_secrets)
+        bridge_secrets_to_env()
+
+        # Check allowlisted vars copied
+        assert os.environ.get("HOSTED") == "1"
+        assert os.environ.get("DEMO_ONLY") == "0"
+        assert os.environ.get("MAX_UPLOAD_MB") == "10"
+        assert os.environ.get("MAX_ROWS") == "15000"
+        assert os.environ.get("MAX_COLS") == "40"
+        assert os.environ.get("MAX_RUN_TOKENS") == "50000"
+        assert os.environ.get("MAX_CONCURRENT_RUNS") == "3"
+        assert os.environ.get("RUN_COOLDOWN_SECONDS") == "30"
+        assert os.environ.get("RUN_WALL_CLOCK_SECONDS") == "120"
+
+        # Check sensitive / non-allowlisted vars refused
+        assert "GROQ_API_KEY" not in os.environ
+        assert "GEMINI_API_KEY" not in os.environ
+        assert "SECRET_KEY" not in os.environ
+        assert "MY_PASSWORD" not in os.environ
+        assert "AUTH_TOKEN" not in os.environ
+        assert "SOME_OTHER_VAR" not in os.environ
+
+        # 2. Already-set variable is not overwritten
+        os.environ["MAX_UPLOAD_MB"] = "25"
+        fake_secrets_override = {"MAX_UPLOAD_MB": "10"}
+        monkeypatch.setattr(st, "secrets", fake_secrets_override)
+        bridge_secrets_to_env()
+        assert os.environ.get("MAX_UPLOAD_MB") == "25"
+
+        # 3. Missing secrets file (AttributeError or FileNotFoundError) does not crash
+        class MissingSecrets:
+            def __getattr__(self, name):
+                raise FileNotFoundError("secrets.toml not found")
+            def keys(self):
+                raise FileNotFoundError("secrets.toml not found")
+
+        monkeypatch.setattr(st, "secrets", MissingSecrets())
+        bridge_secrets_to_env()  # Must not raise
+
+        # 4. Warn if HOSTED=1 and server-side keys exist in environment
+        os.environ["HOSTED"] = "1"
+        os.environ["GROQ_API_KEY"] = "gsk_TESTKEY0123456789abcdef"
+        monkeypatch.setattr(st, "secrets", {})
+        caplog.clear()
+
+        bridge_secrets_to_env()
+        assert "server-side keys are present but disabled in hosted mode" in caplog.text
+        assert "gsk_TESTKEY0123456789abcdef" not in caplog.text
+    finally:
+        os.environ.clear()
+        os.environ.update(orig_env)
+
